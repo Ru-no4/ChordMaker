@@ -1,0 +1,413 @@
+.piano-roll {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border-strong);
+  flex: 0 0 auto;
+}
+
+/* 折りたたみ（スライドダウン） */
+.piano-roll .pr-body {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.24s ease, opacity 0.18s ease;
+}
+
+.piano-roll.is-open {
+  flex: 1 1 auto;
+}
+
+.piano-roll.is-open .pr-body {
+  max-height: 60vh;
+  opacity: 1;
+  overflow: auto;
+}
+
+/* ---- ヘッダー ---- */
+.pr-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 34px;
+  padding: 0 12px;
+  background: linear-gradient(180deg, var(--bg-raised) 0%, var(--bg-panel) 100%);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.pr-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+}
+
+.pr-toggle__caret {
+  display: inline-block;
+  transition: transform 0.2s ease;
+  transform: rotate(-90deg);
+  color: var(--text-dim);
+}
+
+.pr-toggle__caret.is-open {
+  transform: rotate(0deg);
+}
+
+.pr-range {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.pr-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+  min-width: 0;
+}
+
+.pr-current--empty {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.pr-current__swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  border: 1px solid;
+}
+
+.pr-current__meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.pr-header__right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pr-selcount {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-deep);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pr-mini-btn {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--bg-sunken);
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pr-mini-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.pr-mini-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---- 本体 ---- */
+.pr-inner {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+}
+
+.pr-keys {
+  position: sticky;
+  left: 0;
+  z-index: 6;
+  flex: 0 0 var(--gutter-width);
+  width: var(--gutter-width);
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-strong);
+}
+
+/* ---- 鍵盤 ---- */
+.keyboard {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: none;
+}
+
+.key {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  padding: 0 7px;
+  border: none;
+  border-bottom: 1px solid #0b0d10;
+  font-size: 8.5px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.key--white {
+  background: linear-gradient(90deg, #e6e9ee 0%, #f4f6f9 78%, #cfd4db 100%);
+  color: #4a525d;
+}
+
+.key--black {
+  background: linear-gradient(90deg, #1d2126 0%, #2b3138 72%, #101316 100%);
+  color: #8d97a3;
+  width: 72%;
+  border-right: 1px solid #0b0d10;
+}
+
+.key--c {
+  background: linear-gradient(90deg, #d7dde6 0%, #eef1f6 78%, #bcc4cf 100%);
+  font-weight: 700;
+  color: #2c333c;
+}
+
+.key.is-active {
+  background: linear-gradient(90deg, var(--accent-deep) 0%, var(--accent) 100%);
+  color: #04101f;
+  font-weight: 700;
+}
+
+.key:active {
+  filter: brightness(0.86);
+}
+
+.key__label {
+  pointer-events: none;
+}
+
+/* ---- グリッド ---- */
+.pr-grid {
+  position: relative;
+  flex: 0 0 auto;
+  background-color: var(--lane-bg);
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/*
+ * touch-action はツールごとに切り替える。
+ * 背景のドラッグを使わないツールでは、ブラウザの標準スクロールを残しておく
+ * （＝手ツールに切り替えなくても指1本でスクロールできる）。
+ * 範囲選択・消しゴムは背景ドラッグを使うので none にし、
+ * 代わりに2本指ドラッグでパンできるようにしてある。
+ */
+.pr-grid[data-tool='draw'],
+.pr-grid[data-tool='pan'] {
+  touch-action: pan-x pan-y;
+}
+
+.pr-grid[data-tool='range'],
+.pr-grid[data-tool='erase'] {
+  touch-action: none;
+}
+
+.pr-grid[data-tool='draw'] {
+  cursor: crosshair;
+}
+
+.pr-grid[data-tool='erase'] {
+  cursor: crosshair;
+}
+
+.pr-grid[data-tool='pan'] {
+  cursor: grab;
+}
+
+.pr-grid[data-tool='pan']:active {
+  cursor: grabbing;
+}
+
+.pr-rows {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pr-row {
+  box-sizing: border-box;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.28);
+}
+
+.pr-row--black {
+  background: rgba(0, 0, 0, 0.26);
+}
+
+.pr-row--white {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.pr-row--octave {
+  border-bottom-color: rgba(0, 0, 0, 0.55);
+}
+
+/* ---- ブロック範囲 ---- */
+.pr-region {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.18);
+  border-left: 1px solid rgba(255, 255, 255, 0.07);
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+  pointer-events: none;
+}
+
+.pr-region.is-active {
+  background: rgba(255, 255, 255, 0.045);
+  border-left-color: rgba(255, 255, 255, 0.34);
+  border-right-color: rgba(255, 255, 255, 0.34);
+}
+
+/* 選択ブロック内のコードの切れ目。上のコードトラックのセル境界と位置が揃う。 */
+.pr-seg-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.3);
+  pointer-events: none;
+}
+
+/* ---- 矩形選択 ---- */
+.pr-marquee {
+  position: absolute;
+  border: 1px dashed var(--accent);
+  background: rgba(79, 140, 255, 0.14);
+  pointer-events: none;
+  z-index: 6;
+}
+
+/* ---- ノート ---- */
+.pr-note {
+  position: absolute;
+  box-sizing: border-box;
+  border-radius: 3px;
+  border: 1px solid var(--note-accent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--note-base) 82%, #ffffff 18%) 0%,
+    var(--note-base) 100%
+  );
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  padding-left: 4px;
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+  -webkit-touch-callout: none;
+  /* ノート上のドラッグは常に自前で扱う */
+  touch-action: none;
+}
+
+.pr-note:active {
+  cursor: grabbing;
+}
+
+.pr-note.is-selected {
+  border-color: #fff;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6);
+}
+
+/* 消しゴムでなぞられ、指/ボタンを離せば消える状態 */
+.pr-note.is-erasing {
+  filter: saturate(0.3) brightness(0.7);
+  border-color: var(--playhead);
+  box-shadow: 0 0 0 1px var(--playhead);
+}
+
+/*
+ * 選択中ブロック以外のノート。操作はできるので pointer-events は殺さず、
+ * 「今どのブロックを見ているか」が分かる程度に落とすだけにする。
+ */
+.pr-note--dim {
+  opacity: 0.6;
+  filter: saturate(0.75);
+}
+
+/* 小節を跨いで選んだノートは、控えめ表示でもはっきり見せる */
+.pr-note--dim.is-selected,
+.pr-note--dim.is-erasing {
+  opacity: 1;
+  filter: none;
+}
+
+.pr-note__label {
+  font-family: var(--font-mono);
+  font-size: 0.72em;
+  color: rgba(255, 255, 255, 0.85);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.pr-note__handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.pr-note__handle:hover,
+.pr-note.is-selected .pr-note__handle {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* ホバーが無い環境では、見た目を変えずに当たり判定だけ広げる */
+@media (hover: none) {
+  .pr-note__handle::after {
+    content: '';
+    position: absolute;
+    top: -3px;
+    right: 0;
+    bottom: -3px;
+    width: 12px;
+  }
+}
+
+.pr-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--playhead);
+  pointer-events: none;
+  z-index: 7;
+}
