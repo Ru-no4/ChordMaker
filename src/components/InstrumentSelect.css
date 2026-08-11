@@ -1,0 +1,47 @@
+.instrument-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.instrument-select__input {
+  min-width: 180px;
+  max-width: 220px;
+}
+
+.instrument-select__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.instrument-select__status.is-error {
+  color: var(--playhead);
+}
+
+.instrument-select__spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: instrument-spin 0.7s linear infinite;
+}
+
+@keyframes instrument-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .instrument-select__input {
+    min-width: 130px;
+    max-width: 150px;
+  }
+}

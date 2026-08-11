@@ -144,6 +144,18 @@ export function ShortcutHelp({ onClose }: ShortcutHelpProps) {
           </div>
 
           <section className="help-section">
+            <h3>音源</h3>
+            <p className="help-text">
+              コントロールバーの「音源」から切り替えられます。
+              <strong>合成音</strong> はダウンロード不要で即鳴る既定の音源、
+              <strong>Splendid Grand Piano</strong> は Steinway のマルチサンプル、
+              その他は GM 128音色です。サンプルの読み込み中は「読込中」と表示され、
+              その間も合成音で鳴り続けるので操作は止まりません。
+              一度読み込んだ音源はブラウザにキャッシュされます。
+            </p>
+          </section>
+
+          <section className="help-section">
             <h3>再生ヘッドの追従（FOLLOW）</h3>
             <p className="help-text">
               再生中、再生ヘッドが表示領域の中央に来たところから画面が自動で流れます。

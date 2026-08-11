@@ -6,6 +6,7 @@ import {
   type ChordResolution,
   type QuantizeValue,
 } from '../lib/grid';
+import { InstrumentSelect } from './InstrumentSelect';
 import { NumberField } from './NumberField';
 import { PositionReadout } from './PositionReadout';
 import { ToolStrip } from './ToolStrip';
@@ -314,6 +315,8 @@ export function ControlBar({
         </button>
 
         <div className="cb-sep" />
+
+        <InstrumentSelect />
 
         <ZoomControl />
 

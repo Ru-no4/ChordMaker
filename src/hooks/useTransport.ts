@@ -14,6 +14,8 @@ export function useTransport() {
   const volumeDb = useProjectStore((s) => s.volumeDb);
   const isPlaying = useProjectStore((s) => s.isPlaying);
   const setPlaying = useProjectStore((s) => s.setPlaying);
+  const instrumentId = useProjectStore((s) => s.instrumentId);
+  const setInstrumentStatus = useProjectStore((s) => s.setInstrumentStatus);
   const setStep = usePlayheadStore((s) => s.setStep);
 
   const total = totalSteps(timeSignature, bars);
@@ -42,6 +44,28 @@ export function useTransport() {
   useEffect(() => {
     audioEngine.setVolumeDb(volumeDb);
   }, [volumeDb]);
+
+  /* --- 音源の読み込み --- */
+  useEffect(() => {
+    if (audioEngine.currentInstrumentId === instrumentId) return;
+
+    let cancelled = false;
+    setInstrumentStatus(true);
+    audioEngine
+      .loadInstrument(instrumentId)
+      .then(() => {
+        if (!cancelled) setInstrumentStatus(false);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        // 失敗しても内蔵シンセで鳴り続ける
+        setInstrumentStatus(false, '音源を読み込めませんでした');
+        console.error('音源の読み込みに失敗しました', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [instrumentId, setInstrumentStatus]);
 
   /* --- 再生位置の追従 --- */
   const rafRef = useRef<number | null>(null);

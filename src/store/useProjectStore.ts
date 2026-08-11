@@ -13,6 +13,7 @@ import {
   type QuantizeValue,
   type TimeSignature,
 } from '../lib/grid';
+import { DEFAULT_INSTRUMENT_ID } from '../lib/instruments';
 
 /* ------------------------------------------------------------------ */
 /* モデル                                                              */
@@ -153,6 +154,12 @@ interface ProjectState {
   /** 再生ヘッドを画面中央に追従させる */
   followPlayhead: boolean;
 
+  /* --- 音源 --- */
+  instrumentId: string;
+  /** サンプルの読み込み中。この間は内蔵シンセで鳴る。 */
+  instrumentLoading: boolean;
+  instrumentError: string | null;
+
   /* --- 履歴 --- */
   past: DocSnapshot[];
   future: DocSnapshot[];
@@ -188,6 +195,8 @@ interface ProjectState {
   zoomYBy: (factor: number) => void;
   resetZoom: () => void;
   toggleFollowPlayhead: () => void;
+  setInstrument: (id: string) => void;
+  setInstrumentStatus: (loading: boolean, error?: string | null) => void;
 
   /** ドラッグの開始・終了で呼び、その間の変更を1つの履歴にまとめる */
   beginTransaction: () => void;
@@ -340,6 +349,10 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   zoomY: 1,
   followPlayhead: true,
 
+  instrumentId: DEFAULT_INSTRUMENT_ID,
+  instrumentLoading: false,
+  instrumentError: null,
+
   past: [],
   future: [],
   txDepth: 0,
@@ -399,6 +412,9 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     set((s) => ({ zoomY: clamp(s.zoomY * factor, ZOOM_Y_MIN, ZOOM_Y_MAX) })),
   resetZoom: () => set({ zoomX: 1, zoomY: 1 }),
   toggleFollowPlayhead: () => set((s) => ({ followPlayhead: !s.followPlayhead })),
+  setInstrument: (instrumentId) => set({ instrumentId, instrumentError: null }),
+  setInstrumentStatus: (instrumentLoading, instrumentError = null) =>
+    set({ instrumentLoading, instrumentError }),
 
   /* --- 再生 --- */
   setPlaying: (isPlaying) => set({ isPlaying }),
