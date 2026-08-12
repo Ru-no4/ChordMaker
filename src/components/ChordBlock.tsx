@@ -1,9 +1,9 @@
 import { useCallback, useMemo, useRef } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
-import { useProjectStore, type ChordBlockItem } from '../store/useProjectStore';
-import { blockHeight, chordResolutionSteps, laneHeight as laneHeightOf } from '../lib/grid';
+import { useProjectStore, type ChordBlockItem, type NoteDragSnapshot } from '../store/useProjectStore';
+import { blockHeight, chordResolutionSteps, laneHeight as laneHeightOf, snapStep } from '../lib/grid';
 import { capturePointer, isTap, releasePointer } from '../lib/pointer';
-import { segmentsFor } from '../lib/segmentation';
+import { segmentsFor, type ChordSegment as ChordSegmentData } from '../lib/segmentation';
 import { ChordSegment } from './ChordSegment';
 
 type DragMode = 'move' | 'resize-left' | 'resize-right';
@@ -16,36 +16,76 @@ interface ChordBlockProps {
 }
 
 /**
+ * ドラッグの内部状態。
+ *  - 'block': ブロック全体の移動・端リサイズ（Ctrl を伴わない、単一コードのブロック）。
+ *  - 'segment': 掴んだセグメントのノートだけを動かす。小節内に複数コードがある場合の
+ *    通常ドラッグと、Ctrl(Cmd)+ドラッグでの複製（単一コードのブロックも含めて常にこちら）
+ *    の両方をここで扱う。applyNoteDrag に乗せるので、ピアノロールのノートドラッグと
+ *    同じ経路でブロックを跨いだ移動・複製ができ、既存ブロックの隙間の有無に縛られない。
+ */
+type Drag =
+  | {
+      kind: 'block';
+      mode: DragMode;
+      targetId: string;
+      originX: number;
+      originY: number;
+      pointerType: string;
+      origStart: number;
+      origLength: number;
+      moved: boolean;
+      /** 掴んだ時点で選択済みだったか（pointerup 時には選択済みになっている） */
+      wasSelected: boolean;
+    }
+  | {
+      kind: 'segment';
+      snapshots: NoteDragSnapshot[];
+      /** 複製元のノートID（ドラッグせずに離したときの自動配置に使う） */
+      originalNoteIds: string[];
+      /** Ctrl(Cmd) を押しての複製操作か */
+      isDuplicate: boolean;
+      /** 複製操作で、実際に複製処理を実行済みか（動き始めた最初の1回だけ行う） */
+      duplicated: boolean;
+      /** スナップの基準にするセグメント左端の絶対 step */
+      anchorAbsStart: number;
+      originX: number;
+      originY: number;
+      pointerType: string;
+      moved: boolean;
+      /** 掴んだ時点で「このブロックのこのセグメント」が既にアクティブだったか */
+      wasSameSegment: boolean;
+    };
+
+/** セグメントの時間範囲に鳴っているノート（重なりで判定） */
+function notesInSegment(notes: ChordBlockItem['notes'], seg: ChordSegmentData) {
+  const end = seg.start + seg.length;
+  return notes.filter((n) => n.start < end && n.start + n.length > seg.start);
+}
+
+/**
  * コードタイムライン上の1ブロック。
  * ブロック自体は「ノートの入れ物」で、コード名と色は中のセグメントが持つ。
  */
 export function ChordBlock({ block, stepW, zoomY, selected }: ChordBlockProps) {
   const selectBlock = useProjectStore((s) => s.selectBlock);
+  const toggleBlockSelection = useProjectStore((s) => s.toggleBlockSelection);
   const selectSegment = useProjectStore((s) => s.selectSegment);
   const selectedSegmentStart = useProjectStore((s) => s.selectedSegmentStart);
   const setPianoRollOpen = useProjectStore((s) => s.setPianoRollOpen);
-  const pianoRollOpen = useProjectStore((s) => s.pianoRollOpen);
   const moveBlock = useProjectStore((s) => s.moveBlock);
   const resizeBlock = useProjectStore((s) => s.resizeBlock);
   const removeBlock = useProjectStore((s) => s.removeBlock);
-  const duplicateBlock = useProjectStore((s) => s.duplicateBlock);
   const editorTool = useProjectStore((s) => s.editorTool);
   const timeSignature = useProjectStore((s) => s.timeSignature);
   const chordResolution = useProjectStore((s) => s.chordResolution);
+  const quantize = useProjectStore((s) => s.quantize);
+  const snap = useProjectStore((s) => s.snap);
+  const selectNotes = useProjectStore((s) => s.selectNotes);
+  const duplicateSelectedNotes = useProjectStore((s) => s.duplicateSelectedNotes);
+  const applyNoteDrag = useProjectStore((s) => s.applyNoteDrag);
+  const duplicateNotesToNearestGap = useProjectStore((s) => s.duplicateNotesToNearestGap);
 
-  const dragRef = useRef<{
-    mode: DragMode;
-    /** Ctrl ドラッグで複製した場合、動かす対象は複製の方になる */
-    targetId: string;
-    originX: number;
-    originY: number;
-    pointerType: string;
-    origStart: number;
-    origLength: number;
-    moved: boolean;
-    /** 掴んだ時点で選択済みだったか（pointerup 時には選択済みになっている） */
-    wasSelected: boolean;
-  } | null>(null);
+  const dragRef = useRef<Drag | null>(null);
 
   const segments = useMemo(
     () => segmentsFor(block, chordResolutionSteps(timeSignature, chordResolution)),
@@ -62,6 +102,8 @@ export function ChordBlock({ block, stepW, zoomY, selected }: ChordBlockProps) {
     );
   }, [segments, selected, selectedSegmentStart]);
 
+  const single = segments.length <= 1;
+
   const onPointerDown = useCallback(
     (mode: DragMode) => (e: ReactPointerEvent<HTMLElement>) => {
       if (e.button !== 0) return;
@@ -77,58 +119,99 @@ export function ChordBlock({ block, stepW, zoomY, selected }: ChordBlockProps) {
         return;
       }
 
+      // Shift+クリック: 複数選択のトグル（ドラッグは始めない。デスクトップの近道）
+      if (mode === 'move' && e.shiftKey) {
+        toggleBlockSelection(block.id);
+        return;
+      }
+
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const relStep = (e.clientX - rect.left) / stepW;
+      const clickedSeg =
+        segments.find((s) => relStep >= s.start && relStep < s.start + s.length) ?? segments[0] ?? null;
+      const isDuplicate = mode === 'move' && (e.ctrlKey || e.metaKey);
+
       capturePointer(e.currentTarget as HTMLElement, e.pointerId);
       // 掴んでから離すまでを1回の Undo にまとめる（複製もこの中に入れる）
       useProjectStore.getState().beginTransaction();
 
-      let targetId = block.id;
-      let origStart = block.start;
-      let origLength = block.length;
+      // ---- セグメント単位で動く場合: Ctrl での複製は常にこちら、
+      //      Ctrl 無しでも小節内に複数コードがあるときはこちら ----
+      if (mode === 'move' && (isDuplicate || !single) && clickedSeg) {
+        const wasSameSegment =
+          selected &&
+          selectedSegmentStart !== null &&
+          selectedSegmentStart >= clickedSeg.start &&
+          selectedSegmentStart < clickedSeg.start + clickedSeg.length;
 
-      // Ctrl(Cmd)+ドラッグ: 複製した方を掴んで動かす
-      if (mode === 'move' && (e.ctrlKey || e.metaKey)) {
-        const dupId = duplicateBlock(block.id);
-        const dup = dupId ? useProjectStore.getState().blocks.find((b) => b.id === dupId) : null;
-        if (dup) {
-          targetId = dup.id;
-          origStart = dup.start;
-          origLength = dup.length;
-        } else {
-          selectBlock(block.id);
-        }
-      } else {
         selectBlock(block.id);
+        selectSegment(clickedSeg.start);
+
+        const segNotes = notesInSegment(block.notes, clickedSeg);
+        const noteIds = segNotes.map((n) => n.id);
+        selectNotes(noteIds);
+
+        const snapshots: NoteDragSnapshot[] = segNotes.map((n) => ({
+          blockId: block.id,
+          noteId: n.id,
+          start: n.start,
+          length: n.length,
+          midi: n.midi,
+        }));
+
+        dragRef.current = {
+          kind: 'segment',
+          snapshots,
+          originalNoteIds: noteIds,
+          isDuplicate,
+          duplicated: false,
+          anchorAbsStart: block.start + clickedSeg.start,
+          originX: e.clientX,
+          originY: e.clientY,
+          pointerType: e.pointerType,
+          moved: false,
+          wasSameSegment: !!wasSameSegment,
+        };
+        return;
       }
 
+      // ---- 通常（単一コードのブロック本体、または端のリサイズ）はブロック単位で動く ----
+      selectBlock(block.id);
+
       dragRef.current = {
+        kind: 'block',
         mode,
-        targetId,
+        targetId: block.id,
         originX: e.clientX,
         originY: e.clientY,
         pointerType: e.pointerType,
-        origStart,
-        origLength,
+        origStart: block.start,
+        origLength: block.length,
         moved: false,
         wasSelected: selected,
       };
 
       // 掴んだ位置のセグメントをアクティブにする
       if (mode === 'move') {
-        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        selectSegment((e.clientX - rect.left) / stepW);
+        selectSegment(relStep);
       }
     },
     [
       block.id,
       block.start,
       block.length,
-      duplicateBlock,
+      block.notes,
       editorTool,
       removeBlock,
+      segments,
       selectBlock,
-      selectSegment,
+      selectedSegmentStart,
       selected,
+      selectNotes,
+      selectSegment,
+      single,
       stepW,
+      toggleBlockSelection,
     ],
   );
 
@@ -136,12 +219,27 @@ export function ChordBlock({ block, stepW, zoomY, selected }: ChordBlockProps) {
     (e: ReactPointerEvent<HTMLElement>) => {
       const drag = dragRef.current;
       if (!drag) return;
-      const deltaSteps = (e.clientX - drag.originX) / stepW;
+
       if (!drag.moved && !isTap(drag.pointerType, e.clientX - drag.originX, e.clientY - drag.originY)) {
         drag.moved = true;
       }
       if (!drag.moved) return;
 
+      if (drag.kind === 'segment') {
+        // 複製操作は、実際に動き始めた最初の瞬間だけノートを複製する
+        // （タップのみで終わった場合は複製しない or 別経路で自動配置する）
+        if (drag.isDuplicate && !drag.duplicated) {
+          const clones = duplicateSelectedNotes();
+          if (clones.length > 0) drag.snapshots = clones;
+          drag.duplicated = true;
+        }
+        const wantedAbs = drag.anchorAbsStart + (e.clientX - drag.originX) / stepW;
+        const snappedAbs = snapStep(wantedAbs, quantize, snap);
+        applyNoteDrag(drag.snapshots, snappedAbs - drag.anchorAbsStart, 0);
+        return;
+      }
+
+      const deltaSteps = (e.clientX - drag.originX) / stepW;
       switch (drag.mode) {
         case 'move':
           moveBlock(drag.targetId, drag.origStart + deltaSteps);
@@ -154,7 +252,7 @@ export function ChordBlock({ block, stepW, zoomY, selected }: ChordBlockProps) {
           break;
       }
     },
-    [moveBlock, resizeBlock, stepW],
+    [applyNoteDrag, duplicateSelectedNotes, moveBlock, quantize, resizeBlock, snap, stepW],
   );
 
   const onPointerUp = useCallback(
@@ -163,17 +261,40 @@ export function ChordBlock({ block, stepW, zoomY, selected }: ChordBlockProps) {
       dragRef.current = null;
       releasePointer(e.currentTarget as HTMLElement, e.pointerId);
       if (!drag) return;
+
+      if (drag.kind === 'segment' && !drag.moved && drag.isDuplicate) {
+        // ドラッグせずに Ctrl+タップだけで終えた場合、最寄りの空き区間へ自動配置する
+        // （既存ブロックの隙間に縛られず、無ければ元の位置に重ねて複製する）。
+        // endTransaction より前に行い、掴んでから離すまでを1回の Undo にまとめる。
+        duplicateNotesToNearestGap(drag.originalNoteIds);
+      }
       useProjectStore.getState().endTransaction();
-      // タップ（＝動かしていない）ならピアノロールを開閉。
-      // 未選択のブロックを選んだときは必ず開く。
+
+      if (drag.kind === 'segment') {
+        if (!drag.moved && !drag.isDuplicate) {
+          if (drag.wasSameSegment) {
+            // タップ（＝動かしていない）で、既にアクティブだった同じセグメントを
+            // 再度タップしたら選択解除。違うセグメント・違うブロックへの
+            // 切り替えは選択したままにする（ピアノロールも閉じない）。
+            selectBlock(null);
+          } else {
+            setPianoRollOpen(true);
+          }
+        }
+        return;
+      }
+
+      // タップ（＝動かしていない）で、既に選択済みのブロックを再度タップしたら選択解除。
+      // ピアノロールの開閉には触れない（閉じる必要は無い）。
+      // 未選択のブロックを選んだときはピアノロールを必ず開く。
       if (drag.mode === 'move' && !drag.moved) {
-        setPianoRollOpen(drag.wasSelected ? !pianoRollOpen : true);
+        if (drag.wasSelected) selectBlock(null);
+        else setPianoRollOpen(true);
       }
     },
-    [pianoRollOpen, setPianoRollOpen],
+    [duplicateNotesToNearestGap, selectBlock, setPianoRollOpen],
   );
 
-  const single = segments.length <= 1;
   const height = blockHeight(zoomY);
 
   return (

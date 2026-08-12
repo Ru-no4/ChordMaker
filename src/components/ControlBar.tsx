@@ -69,6 +69,49 @@ export function ControlBar({
     <header className="control-bar">
       {/* ---- 左ゾーン: トランスポート ---- */}
       <div className="cb-zone cb-zone--left">
+        <ProjectFileControls />
+
+        <div className="cb-transport cb-transport--gap-after">
+          <button
+            type="button"
+            className="cb-btn"
+            onClick={undo}
+            disabled={!canUndo}
+            title="元に戻す (Ctrl+Z)"
+            aria-label="元に戻す"
+          >
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <path
+                d="M3 7h6.5a3.5 3.5 0 0 1 0 7H6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+              />
+              <path d="M5.6 3.6 2 7l3.6 3.4z" fill="currentColor" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="cb-btn"
+            onClick={redo}
+            disabled={!canRedo}
+            title="やり直す (Ctrl+Y)"
+            aria-label="やり直す"
+          >
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <path
+                d="M13 7H6.5a3.5 3.5 0 0 0 0 7H10"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+              />
+              <path d="M10.4 3.6 14 7l-3.6 3.4z" fill="currentColor" />
+            </svg>
+          </button>
+        </div>
+
         <div className="cb-transport">
           <button
             type="button"
@@ -153,49 +196,6 @@ export function ControlBar({
           </button>
         </div>
 
-        <div className="cb-transport">
-          <button
-            type="button"
-            className="cb-btn"
-            onClick={undo}
-            disabled={!canUndo}
-            title="元に戻す (Ctrl+Z)"
-            aria-label="元に戻す"
-          >
-            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-              <path
-                d="M3 7h6.5a3.5 3.5 0 0 1 0 7H6"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-              />
-              <path d="M5.6 3.6 2 7l3.6 3.4z" fill="currentColor" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            className="cb-btn"
-            onClick={redo}
-            disabled={!canRedo}
-            title="やり直す (Ctrl+Y)"
-            aria-label="やり直す"
-          >
-            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-              <path
-                d="M13 7H6.5a3.5 3.5 0 0 0 0 7H10"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-              />
-              <path d="M10.4 3.6 14 7l-3.6 3.4z" fill="currentColor" />
-            </svg>
-          </button>
-        </div>
-
-        <ProjectFileControls />
-
         <PositionReadout />
 
         <div className="cb-sep" />
@@ -259,65 +259,15 @@ export function ControlBar({
             id="bars-input"
             className="cb-number cb-number--narrow"
             min={1}
-            max={64}
+            max={512}
             value={bars}
             onCommit={setBars}
           />
         </div>
       </div>
 
-      {/* ---- 右ゾーン: ツール / グリッド / 表示 ---- */}
-      <div className="cb-zone cb-zone--right">
-        <ToolStrip />
-
-        <div className="cb-field">
-          <span className="cb-label" title="コードを判定する時間の刻み（小節を何分割するか）">
-            Chord
-          </span>
-          <div className="cb-segmented" role="group" aria-label="コード解像度">
-            {CHORD_DIVISIONS.map((res) => (
-              <button
-                key={res}
-                type="button"
-                className={`cb-seg ${chordResolution === res ? 'is-active' : ''}`}
-                onClick={() => setChordResolution(res as ChordResolution)}
-                aria-pressed={chordResolution === res}
-              >
-                {CHORD_RESOLUTION_LABELS[res]}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="cb-field">
-          <span className="cb-label">Quantize</span>
-          <div className="cb-segmented" role="group" aria-label="クオンタイズ">
-            {QUANTIZE_OPTIONS.map((q) => (
-              <button
-                key={q}
-                type="button"
-                className={`cb-seg ${quantize === q ? 'is-active' : ''}`}
-                onClick={() => setQuantize(q as QuantizeValue)}
-                aria-pressed={quantize === q}
-              >
-                1/{q}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <button
-          type="button"
-          className={`cb-btn cb-btn--wide ${snap ? 'is-active' : ''}`}
-          onClick={toggleSnap}
-          aria-pressed={snap}
-          title="グリッドへの吸着"
-        >
-          SNAP {snap ? 'ON' : 'OFF'}
-        </button>
-
-        <div className="cb-sep" />
-
+      {/* ---- 音源 / ツール / グリッド / 表示。左ゾーンと同様に左寄せで続ける ---- */}
+      <div className="cb-zone cb-zone--tools">
         <InstrumentSelect />
 
         <div className="cb-field cb-field--volume">
@@ -335,6 +285,56 @@ export function ControlBar({
             aria-label="音量"
           />
         </div>
+
+        <div className="cb-sep" />
+
+        <ToolStrip />
+
+        <div className="cb-field">
+          <label className="cb-label" htmlFor="chord-select" title="コードを判定する時間の刻み（小節を何分割するか）">
+            Chord
+          </label>
+          <select
+            id="chord-select"
+            className="cb-select"
+            value={chordResolution}
+            onChange={(e) => setChordResolution(Number(e.target.value) as ChordResolution)}
+          >
+            {CHORD_DIVISIONS.map((res) => (
+              <option key={res} value={res}>
+                {CHORD_RESOLUTION_LABELS[res]}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="cb-field">
+          <label className="cb-label" htmlFor="quantize-select">
+            Quantize
+          </label>
+          <select
+            id="quantize-select"
+            className="cb-select"
+            value={quantize}
+            onChange={(e) => setQuantize(Number(e.target.value) as QuantizeValue)}
+          >
+            {QUANTIZE_OPTIONS.map((q) => (
+              <option key={q} value={q}>
+                1/{q}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          type="button"
+          className={`cb-btn cb-btn--wide ${snap ? 'is-active' : ''}`}
+          onClick={toggleSnap}
+          aria-pressed={snap}
+          title="グリッドへの吸着"
+        >
+          SNAP {snap ? 'ON' : 'OFF'}
+        </button>
 
         <button
           type="button"

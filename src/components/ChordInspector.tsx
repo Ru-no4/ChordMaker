@@ -44,10 +44,13 @@ interface ChordInspectorProps {
 export function ChordInspector({ onPreview }: ChordInspectorProps) {
   const blocks = useProjectStore((s) => s.blocks);
   const selectedBlockId = useProjectStore((s) => s.selectedBlockId);
+  const selectedBlockIds = useProjectStore((s) => s.selectedBlockIds);
   const timeSignature = useProjectStore((s) => s.timeSignature);
   const chordResolution = useProjectStore((s) => s.chordResolution);
   const selectSegment = useProjectStore((s) => s.selectSegment);
   const setSegmentNotes = useProjectStore((s) => s.setSegmentNotes);
+  const applyBulkSegmentNotes = useProjectStore((s) => s.applyBulkSegmentNotes);
+  const clearBlockSelection = useProjectStore((s) => s.clearBlockSelection);
 
   const selected = blocks.find((b) => b.id === selectedBlockId) ?? null;
   const resolutionSteps = chordResolutionSteps(timeSignature, chordResolution);
@@ -66,6 +69,62 @@ export function ChordInspector({ onPreview }: ChordInspectorProps) {
         : [],
     [blocks, resolutionSteps, selected, segment],
   );
+
+  // ---- 複数ブロック選択中: 通常の単一コード表示より優先して一括操作パネルを出す ----
+  if (selectedBlockIds.length > 0) {
+    const handleChainVoiceLead = () => {
+      const targets = blocks
+        .filter((b) => selectedBlockIds.includes(b.id))
+        .sort((a, b) => a.start - b.start);
+      if (targets.length < 2) return;
+
+      const updates: Array<{
+        blockId: string;
+        segStart: number;
+        segLength: number;
+        midis: number[];
+      }> = [];
+      let prevMidis: number[] | null = null;
+
+      for (const block of targets) {
+        for (const seg of segmentsFor(block, resolutionSteps)) {
+          if (seg.detection.kind !== 'chord' || seg.midis.length === 0) continue;
+          if (prevMidis === null) {
+            // 先頭のコードは据え置き、以降の基準にする
+            prevMidis = seg.midis;
+            continue;
+          }
+          const pcs = [...new Set(seg.midis.map(pitchClass))];
+          const newMidis = voiceLeadMidis(pcs, prevMidis);
+          if (newMidis.length === 0) continue;
+          updates.push({ blockId: block.id, segStart: seg.start, segLength: seg.length, midis: newMidis });
+          prevMidis = newMidis;
+        }
+      }
+      if (updates.length > 0) applyBulkSegmentNotes(updates);
+    };
+
+    return (
+      <div className="inspector inspector--multi">
+        <span className="inspector__label">{selectedBlockIds.length}個選択中</span>
+        <div className="chip-row">
+          <button
+            type="button"
+            className="chip"
+            disabled={selectedBlockIds.length < 2}
+            title="先頭のコードは据え置き、以降を順に前のコードへ近いオクターブで合わせる（声部の移動を抑える）"
+            onClick={handleChainVoiceLead}
+          >
+            ボイシングをつなげる
+          </button>
+          <button type="button" className="chip" onClick={clearBlockSelection}>
+            選択解除
+          </button>
+        </div>
+        <span className="inspector__hint">Shift+クリック、または範囲選択ツールのドラッグで選び直せます</span>
+      </div>
+    );
+  }
 
   if (!selected || !segment) {
     return (

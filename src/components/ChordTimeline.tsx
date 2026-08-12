@@ -1,11 +1,13 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react';
 import { useProjectStore } from '../store/useProjectStore';
 import {
+  STEPS_PER_WHOLE,
   ZOOM_FACTOR,
   ZOOM_X_MAX,
   ZOOM_X_MIN,
   beatWidth,
+  displayBars,
   laneHeight,
   stepWidth,
   stepsPerBar,
@@ -24,6 +26,9 @@ import './ChordTimeline.css';
 /** 鍵盤幅と揃えた左ガター幅 */
 export const GUTTER_WIDTH = 120;
 
+/** 再生範囲ハンドル（三角形のつまみ）の幅。CSS 側の .ruler__range-handle と揃える */
+const RANGE_HANDLE_WIDTH = 12;
+
 interface ChordTimelineProps {
   onSeek: (step: number) => void;
 }
@@ -32,8 +37,15 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
   const blocks = useProjectStore((s) => s.blocks);
   const timeSignature = useProjectStore((s) => s.timeSignature);
   const bars = useProjectStore((s) => s.bars);
+  const setBars = useProjectStore((s) => s.setBars);
+  const rangeStart = useProjectStore((s) => s.rangeStart);
+  const setRangeStart = useProjectStore((s) => s.setRangeStart);
+  const beginTransaction = useProjectStore((s) => s.beginTransaction);
+  const endTransaction = useProjectStore((s) => s.endTransaction);
   const selectedBlockId = useProjectStore((s) => s.selectedBlockId);
+  const selectedBlockIds = useProjectStore((s) => s.selectedBlockIds);
   const selectBlock = useProjectStore((s) => s.selectBlock);
+  const selectBlocks = useProjectStore((s) => s.selectBlocks);
   const addBlockAt = useProjectStore((s) => s.addBlockAt);
   const editorTool = useProjectStore((s) => s.editorTool);
   const zoomX = useProjectStore((s) => s.zoomX);
@@ -44,10 +56,24 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
 
   const { ref, onScroll } = useSyncedScroll<HTMLDivElement>();
   const panRef = useRef<{ originX: number; scrollLeft: number } | null>(null);
+  const marqueeRef = useRef<{ originX: number; base: string[]; additive: boolean } | null>(null);
+  const [marquee, setMarquee] = useState<{ left: number; width: number } | null>(null);
+  const rangeEndDragRef = useRef<{ originX: number; origValue: number } | null>(null);
+  const rangeStartDragRef = useRef<{ originX: number; origValue: number } | null>(null);
 
   const stepW = stepWidth(timeSignature, zoomX);
   const barW = stepsPerBar(timeSignature) * stepW;
-  const total = totalSteps(timeSignature, bars);
+  // 再生範囲スライダーは小節単位ではなく、小節内を四分音符単位で動かせるようにする
+  const rangeSnapBars = (STEPS_PER_WHOLE / 4) / stepsPerBar(timeSignature);
+  // 開始位置が終了位置以降まで来てしまっている（入れ替わっている）間は無効な範囲として扱う
+  const rangeValid = rangeStart < bars;
+  const rangeBandLeft = Math.min(rangeStart, bars) * barW;
+  const rangeBandWidth = Math.abs(bars - rangeStart) * barW;
+  const rangeStartHandleLeft = rangeStart * barW;
+  const rangeEndHandleLeft = bars * barW - RANGE_HANDLE_WIDTH;
+  // 表示上の小節数。bars を超えて置かれた内容があれば、そこまで表示を伸ばす
+  const shownBars = displayBars(timeSignature, bars, blocks);
+  const total = totalSteps(timeSignature, shownBars);
   const laneWidth = total * stepW;
   const laneH = laneHeight(zoomY);
   const beatsPerBar = timeSignature.numerator;
@@ -86,22 +112,56 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
         addBlockAt((e.clientX - rect.left) / stepW);
         return;
       }
+
+      if (editorTool === 'range') {
+        // 範囲選択はドラッグで複数ブロックをまとめて選ぶ
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        capturePointer(e.currentTarget, e.pointerId);
+        marqueeRef.current = {
+          originX: x,
+          base: e.shiftKey ? selectedBlockIds : [],
+          additive: e.shiftKey,
+        };
+        setMarquee({ left: x, width: 0 });
+        return;
+      }
+
       selectBlock(null);
     },
-    [addBlockAt, editorTool, ref, selectBlock, stepW],
+    [addBlockAt, editorTool, selectBlock, selectedBlockIds, stepW],
   );
 
   const onLanePointerMove = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       const pan = panRef.current;
-      if (!pan || !ref.current) return;
-      ref.current.scrollLeft = pan.scrollLeft - (e.clientX - pan.originX);
+      if (pan && ref.current) {
+        ref.current.scrollLeft = pan.scrollLeft - (e.clientX - pan.originX);
+        return;
+      }
+
+      const mq = marqueeRef.current;
+      if (!mq) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const left = Math.min(mq.originX, x);
+      const width = Math.abs(x - mq.originX);
+      setMarquee({ left, width });
+
+      const hitStart = left / stepW;
+      const hitEnd = (left + width) / stepW;
+      const ids = blocks
+        .filter((b) => b.start < hitEnd && b.start + b.length > hitStart)
+        .map((b) => b.id);
+      selectBlocks(mq.additive ? [...mq.base, ...ids] : ids);
     },
-    [ref],
+    [blocks, ref, selectBlocks, stepW],
   );
 
   const onLanePointerUp = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
     panRef.current = null;
+    marqueeRef.current = null;
+    setMarquee(null);
     releasePointer(e.currentTarget, e.pointerId);
   }, []);
 
@@ -157,6 +217,80 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
     [rulerAutoScroll],
   );
 
+  /**
+   * 再生範囲（bars）の終了ハンドル。Cubase のプロジェクト終端マーカーと同じ要領で、
+   * ルーラー上のバーをドラッグして小節数を変える。中身の削除は起きない
+   * （bars を減らしても、それを超えた位置のブロックはそのまま残る）。
+   */
+  const onRangeEndDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      capturePointer(e.currentTarget, e.pointerId);
+      beginTransaction();
+      rangeEndDragRef.current = { originX: e.clientX, origValue: bars };
+    },
+    [bars, beginTransaction],
+  );
+
+  const onRangeEndMove = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      const drag = rangeEndDragRef.current;
+      if (!drag) return;
+      const deltaBars = (e.clientX - drag.originX) / barW;
+      const raw = drag.origValue + deltaBars;
+      const next = Math.max(rangeSnapBars, Math.round(raw / rangeSnapBars) * rangeSnapBars);
+      if (next !== bars) setBars(next);
+    },
+    [barW, bars, rangeSnapBars, setBars],
+  );
+
+  const onRangeEndUp = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      rangeEndDragRef.current = null;
+      endTransaction();
+      releasePointer(e.currentTarget, e.pointerId);
+    },
+    [endTransaction],
+  );
+
+  /**
+   * 再生範囲の開始ハンドル。終了ハンドルと同じ要領でドラッグできる。
+   * 終了位置を追い越しても止めない — その場合は「入れ替わっている」として
+   * 範囲全体が無効（再生範囲扱いしない）になり、見た目もグレーになる。
+   */
+  const onRangeStartDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      capturePointer(e.currentTarget, e.pointerId);
+      beginTransaction();
+      rangeStartDragRef.current = { originX: e.clientX, origValue: rangeStart };
+    },
+    [rangeStart, beginTransaction],
+  );
+
+  const onRangeStartMove = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      const drag = rangeStartDragRef.current;
+      if (!drag) return;
+      const deltaBars = (e.clientX - drag.originX) / barW;
+      const raw = drag.origValue + deltaBars;
+      const next = Math.max(0, Math.round(raw / rangeSnapBars) * rangeSnapBars);
+      if (next !== rangeStart) setRangeStart(next);
+    },
+    [barW, rangeSnapBars, rangeStart, setRangeStart],
+  );
+
+  const onRangeStartUp = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      rangeStartDragRef.current = null;
+      endTransaction();
+      releasePointer(e.currentTarget, e.pointerId);
+    },
+    [endTransaction],
+  );
+
   /** Ctrl+ホイールで拡大縮小（Shift 併用で縦） */
   const onWheel = useCallback(
     (e: ReactWheelEvent<HTMLDivElement>) => {
@@ -188,8 +322,12 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
               onPointerCancel={onRulerPointerUp}
               onLostPointerCapture={onRulerPointerUp}
             >
-              {Array.from({ length: bars }, (_, i) => (
-                <div key={i} className="ruler__bar" style={{ width: barW }}>
+              {Array.from({ length: shownBars }, (_, i) => (
+                <div
+                  key={i}
+                  className={`ruler__bar ${i >= bars ? 'is-overflow' : ''}`}
+                  style={{ width: barW }}
+                >
                   <span className="ruler__num">{i + 1}</span>
                   {Array.from({ length: beatsPerBar - 1 }, (_, b) => (
                     <span
@@ -200,6 +338,36 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
                   ))}
                 </div>
               ))}
+
+              {/*
+                ---- 再生範囲（rangeStart 〜 bars）。両端をドラッグして変更できる。
+                開始・終了が入れ替わっている間は is-invalid でグレーにし、
+                再生範囲として扱わない（useTransport 側でも同様にフォールバックする）。
+              ---- */}
+              <div
+                className={`ruler__range ${rangeValid ? '' : 'is-invalid'}`}
+                style={{ left: rangeBandLeft, width: rangeBandWidth }}
+              />
+              <div
+                className={`ruler__range-handle ruler__range-handle--start ${rangeValid ? '' : 'is-invalid'}`}
+                style={{ left: rangeStartHandleLeft }}
+                onPointerDown={onRangeStartDown}
+                onPointerMove={onRangeStartMove}
+                onPointerUp={onRangeStartUp}
+                onPointerCancel={onRangeStartUp}
+                onLostPointerCapture={onRangeStartUp}
+                title="ドラッグして再生範囲の開始位置を変更"
+              />
+              <div
+                className={`ruler__range-handle ruler__range-handle--end ${rangeValid ? '' : 'is-invalid'}`}
+                style={{ left: rangeEndHandleLeft }}
+                onPointerDown={onRangeEndDown}
+                onPointerMove={onRangeEndMove}
+                onPointerUp={onRangeEndUp}
+                onPointerCancel={onRangeEndUp}
+                onLostPointerCapture={onRangeEndUp}
+                title="ドラッグして再生範囲の終了位置を変更"
+              />
             </div>
           </div>
 
@@ -230,9 +398,16 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
                   block={block}
                   stepW={stepW}
                   zoomY={zoomY}
-                  selected={block.id === selectedBlockId}
+                  selected={block.id === selectedBlockId || selectedBlockIds.includes(block.id)}
                 />
               ))}
+
+              {marquee && (
+                <div
+                  className="chord-lane__marquee"
+                  style={{ left: marquee.left, width: marquee.width }}
+                />
+              )}
             </div>
           </div>
 

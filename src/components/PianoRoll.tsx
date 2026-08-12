@@ -9,6 +9,7 @@ import {
   ZOOM_Y_MIN,
   beatWidth,
   chordResolutionSteps,
+  displayBars,
   stepWidth,
   stepsPerBar,
   totalSteps,
@@ -55,7 +56,9 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
 
   const stepW = stepWidth(timeSignature, zoomX);
   const barW = stepsPerBar(timeSignature) * stepW;
-  const laneWidth = totalSteps(timeSignature, bars) * stepW;
+  // コードトラックと同じ考え方: bars を超えて置かれた内容があれば表示幅を伸ばす
+  const shownBars = displayBars(timeSignature, bars, blocks);
+  const laneWidth = totalSteps(timeSignature, shownBars) * stepW;
   const rowH = rowHeight(zoomY);
   const height = gridHeight(zoomY);
 
@@ -97,12 +100,12 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
     [barW, stepW, zoomX],
   );
 
-  // 初回展開時に中音域（C4付近）を表示
+  // 初回展開時に C3 が中央に来るようにする
   useEffect(() => {
     if (!open || centeredRef.current) return;
     const el = ref.current;
     if (!el) return;
-    el.scrollTop = Math.max(0, rowTop(64, zoomY) - el.clientHeight / 2);
+    el.scrollTop = Math.max(0, rowTop(48, zoomY) - el.clientHeight / 2);
     centeredRef.current = true;
   }, [open, ref, zoomY]);
 
@@ -135,7 +138,7 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
           PIANO ROLL
         </button>
 
-        <span className="pr-range">C2 – C5</span>
+        <span className="pr-range">C1 – C6</span>
 
         {selected ? (
           <span className="pr-current">

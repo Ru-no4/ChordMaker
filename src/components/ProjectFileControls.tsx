@@ -26,6 +26,7 @@ export function ProjectFileControls() {
   const bpm = useProjectStore((s) => s.bpm);
   const timeSignature = useProjectStore((s) => s.timeSignature);
   const bars = useProjectStore((s) => s.bars);
+  const rangeStart = useProjectStore((s) => s.rangeStart);
   const chordResolution = useProjectStore((s) => s.chordResolution);
   const quantize = useProjectStore((s) => s.quantize);
   const snap = useProjectStore((s) => s.snap);
@@ -39,6 +40,7 @@ export function ProjectFileControls() {
       bpm,
       timeSignature,
       bars,
+      rangeStart,
       chordResolution,
       quantize,
       snap,

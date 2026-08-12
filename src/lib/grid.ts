@@ -54,9 +54,33 @@ export const stepWidth = (sig: TimeSignature, zoomX: number): number =>
 export const blockHeight = (zoomY: number): number => BASE_BLOCK_HEIGHT * zoomY;
 export const laneHeight = (zoomY: number): number => BASE_LANE_HEIGHT * zoomY;
 
-/** プロジェクト全体の step 数 */
+/** プロジェクト全体の step 数（＝再生・ループの基準となる範囲） */
 export const totalSteps = (sig: TimeSignature, bars: number): number =>
   stepsPerBar(sig) * bars;
+
+/** 配置されているブロックが実際に占めている末尾の step（無ければ 0） */
+export function contentExtentSteps(blocks: Array<{ start: number; length: number }>): number {
+  return blocks.reduce((max, b) => Math.max(max, b.start + b.length), 0);
+}
+
+/**
+ * タイムラインの表示に使う小節数（＝ルーラー・レーンに描く小節セルの数）。
+ * bars（再生範囲の終了位置）を基準にしつつ、それを超えて置かれた内容があれば
+ * 収まるところまで表示幅を伸ばす。DAW の「プロジェクト終端マーカーの
+ * 後ろにも中身を置ける」挙動と同じで、再生範囲そのものは bars のまま変わらない。
+ *
+ * bars 自体は四分音符単位の小数を取りうるが、セルの数は常に整数
+ * （端数の小節も1セル分の幅で描き、その中を実座標でハンドル等が指す）。
+ */
+export function displayBars(
+  sig: TimeSignature,
+  bars: number,
+  blocks: Array<{ start: number; length: number }>,
+): number {
+  const perBar = stepsPerBar(sig);
+  const content = contentExtentSteps(blocks);
+  return Math.max(1, Math.ceil(Math.max(bars, content / perBar)));
+}
 
 /* ------------------------------------------------------------------ */
 /* クオンタイズ                                                        */

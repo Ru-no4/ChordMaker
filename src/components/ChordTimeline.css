@@ -102,6 +102,68 @@
   background: var(--grid-beat);
 }
 
+/* 再生範囲（bars）を超えて表示している小節は、少し沈めて区別する */
+.ruler__bar.is-overflow {
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.ruler__bar.is-overflow .ruler__num {
+  color: var(--text-faint);
+}
+
+/*
+ * 再生範囲（rangeStart 〜 bars）そのものを示す帯。Cubase のロケーター（L/R）と同じ位置づけで、
+ * 左右のハンドルをドラッグして開始・終了位置を変えられる。範囲の外（is-overflow の小節）にも
+ * ブロックは置けるが、ループ・自動停止の基準はこの帯のまま変わらない。
+ * 開始・終了が入れ替わっている間は is-invalid になり、再生範囲として扱われない。
+ */
+.ruler__range {
+  position: absolute;
+  top: 0;
+  height: 6px;
+  background: color-mix(in srgb, var(--accent) 75%, transparent);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.ruler__range.is-invalid {
+  background: color-mix(in srgb, var(--text-faint) 60%, transparent);
+}
+
+/*
+ * 開始・終了それぞれの位置を示す、逆三角形（直角二等辺三角形）のつまみ。
+ * 開始位置は左上が直角（左辺が全高そろい、先端は左下）、
+ * 終了位置は右上が直角（右辺が全高そろい、先端は右下）で、
+ * どちらも三角形の「先端」が正確な位置を指す。
+ */
+.ruler__range-handle {
+  position: absolute;
+  top: -4px;
+  width: 12px;
+  height: 14px;
+  background: var(--accent);
+  cursor: ew-resize;
+  pointer-events: auto;
+  touch-action: none;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5));
+}
+
+.ruler__range-handle--start {
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+
+.ruler__range-handle--end {
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+}
+
+.ruler__range-handle:hover {
+  background: var(--accent-deep);
+}
+
+.ruler__range-handle.is-invalid {
+  background: var(--text-faint);
+}
+
 /* ---- コードレーン ---- */
 .chord-lane {
   position: relative;
@@ -129,6 +191,21 @@
 
 .chord-lane.tool-pan:active {
   cursor: grabbing;
+}
+
+.chord-lane.tool-range {
+  cursor: crosshair;
+}
+
+/* ---- 複数ブロックの矩形選択 ---- */
+.chord-lane__marquee {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border: 1px dashed var(--accent);
+  background: rgba(79, 140, 255, 0.14);
+  pointer-events: none;
+  z-index: 6;
 }
 
 /* ---- コードブロック（高さ60px） ---- */

@@ -7,7 +7,7 @@ import { PITCH_MAX, PITCH_MIN } from '../store/useProjectStore';
 /** 倍率100%のときの1行（1半音）の高さ */
 export const BASE_ROW_HEIGHT = 14;
 
-/** 高い音が上。C2〜C5 の 37 鍵 */
+/** 高い音が上。C1〜C6 の 61 鍵 */
 export const PITCHES: number[] = Array.from(
   { length: PITCH_MAX - PITCH_MIN + 1 },
   (_, i) => PITCH_MAX - i,

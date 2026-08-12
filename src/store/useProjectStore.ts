@@ -8,7 +8,6 @@ import {
   snapLength,
   snapStep,
   stepsPerBar,
-  totalSteps,
   type ChordResolution,
   type QuantizeValue,
   type TimeSignature,
@@ -67,9 +66,9 @@ export interface ClipboardNotesPayload {
 }
 export type ClipboardPayload = ClipboardBlockPayload | ClipboardNotesPayload;
 
-/** ピアノロールの表示範囲: C2〜C5（3オクターブ） */
-export const PITCH_MIN = 36; // C2
-export const PITCH_MAX = 72; // C5
+/** ピアノロールの表示範囲: C1〜C6（5オクターブ） */
+export const PITCH_MIN = 24; // C1
+export const PITCH_MAX = 84; // C6
 
 let idSeq = 0;
 const nextId = (prefix: string): string => `${prefix}-${Date.now().toString(36)}-${idSeq++}`;
@@ -80,6 +79,8 @@ const nextId = (prefix: string): string => `${prefix}-${Date.now().toString(36)}
 
 const DEFAULT_SIG: TimeSignature = { numerator: 4, denominator: 4 };
 const DEFAULT_BARS = 4;
+/** 「小節数」入力の安全な上限（意味のある業務的な上限ではなく、暴走防止のための値） */
+const BARS_MAX = 512;
 
 function makeBlock(start: number, length: number, midis: number[]): ChordBlockItem {
   return {
@@ -122,6 +123,7 @@ function seedBlocks(): ChordBlockItem[] {
 interface DocSnapshot {
   blocks: ChordBlockItem[];
   bars: number;
+  rangeStart: number;
   timeSignature: TimeSignature;
 }
 
@@ -130,20 +132,31 @@ const HISTORY_LIMIT = 100;
 const docOf = (s: {
   blocks: ChordBlockItem[];
   bars: number;
+  rangeStart: number;
   timeSignature: TimeSignature;
-}): DocSnapshot => ({ blocks: s.blocks, bars: s.bars, timeSignature: s.timeSignature });
+}): DocSnapshot => ({
+  blocks: s.blocks,
+  bars: s.bars,
+  rangeStart: s.rangeStart,
+  timeSignature: s.timeSignature,
+});
 
 /** すべて immutable に差し替えているので参照比較で十分 */
 const sameDoc = (a: DocSnapshot, b: DocSnapshot): boolean =>
-  a.blocks === b.blocks && a.bars === b.bars && a.timeSignature === b.timeSignature;
+  a.blocks === b.blocks &&
+  a.bars === b.bars &&
+  a.rangeStart === b.rangeStart &&
+  a.timeSignature === b.timeSignature;
 
 /** 復元後、消えたブロック / ノートを選択したままにしない */
 function reconcileSelection(doc: DocSnapshot, prev: ProjectState) {
   const noteIds = new Set(doc.blocks.flatMap((b) => b.notes.map((n) => n.id)));
+  const blockIds = new Set(doc.blocks.map((b) => b.id));
   return {
     selectedBlockId: doc.blocks.some((b) => b.id === prev.selectedBlockId)
       ? prev.selectedBlockId
       : null,
+    selectedBlockIds: prev.selectedBlockIds.filter((id) => blockIds.has(id)),
     selectedNoteIds: prev.selectedNoteIds.filter((id) => noteIds.has(id)),
     selectedSegmentStart: null,
   };
@@ -158,6 +171,8 @@ interface ProjectState {
   bpm: number;
   timeSignature: TimeSignature;
   bars: number;
+  /** 再生・ループ範囲の開始位置（小節単位）。bars（終了位置）以上になると無効扱い。 */
+  rangeStart: number;
   loop: boolean;
   quantize: QuantizeValue;
   snap: boolean;
@@ -192,6 +207,8 @@ interface ProjectState {
   /* --- 内容 --- */
   blocks: ChordBlockItem[];
   selectedBlockId: string | null;
+  /** コードトラック上の複数選択（一括ボイシングなど）。通常の単一選択とは独立して持つ。 */
+  selectedBlockIds: string[];
   selectedNoteIds: string[];
   /** 選択中ブロック内の相対 step。null なら再生ヘッド/先頭で解決する。 */
   selectedSegmentStart: number | null;
@@ -203,6 +220,7 @@ interface ProjectState {
   setBpm: (bpm: number) => void;
   setTimeSignature: (sig: TimeSignature) => void;
   setBars: (bars: number) => void;
+  setRangeStart: (bar: number) => void;
   toggleLoop: () => void;
   setQuantize: (q: QuantizeValue) => void;
   toggleSnap: () => void;
@@ -232,11 +250,23 @@ interface ProjectState {
   moveBlock: (id: string, step: number) => void;
   resizeBlock: (id: string, length: number, fromStart?: boolean) => void;
   selectBlock: (id: string | null) => void;
+  selectBlocks: (ids: string[], additive?: boolean) => void;
+  toggleBlockSelection: (id: string) => void;
+  clearBlockSelection: () => void;
   selectSegment: (relStep: number | null) => void;
   setPianoRollOpen: (open: boolean) => void;
   copyBlock: (id: string) => void;
   pasteBlockAt: (step: number) => string | null;
-  duplicateBlock: (id: string) => string | null;
+  /** 呼び出し側で計算済みのセグメント差し替えを、まとめて1回の Undo で反映する */
+  applyBulkSegmentNotes: (
+    updates: Array<{ blockId: string; segStart: number; segLength: number; midis: number[] }>,
+  ) => void;
+  /**
+   * 指定ノートを複製し、最も近い空き区間があればそこへ新しいブロックとして配置する
+   * （無ければ元の位置に重ねて複製するだけ）。Ctrl+タップ（ドラッグ無し）での
+   * コード複製に使う — 既存ブロックの隙間に縛られず、空いている場所へ自動で飛ぶ。
+   */
+  duplicateNotesToNearestGap: (noteIds: string[]) => void;
 
   /** 追加したノートの id を返す（描画直後にドラッグで長さを決めるため） */
   addNote: (blockId: string, midi: number, start: number, length: number) => string | null;
@@ -387,6 +417,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   bpm: 160,
   timeSignature: DEFAULT_SIG,
   bars: DEFAULT_BARS,
+  rangeStart: 0,
   loop: true,
   quantize: 16,
   snap: true,
@@ -395,7 +426,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   chordResolution: 4,
   editorTool: 'draw',
   zoomX: 0.5,
-  zoomY: 1,
+  zoomY: 0.8, // ZOOM_FACTOR 1段階分ズームアウトした状態を初期表示にする
   followPlayhead: true,
 
   instrumentId: DEFAULT_INSTRUMENT_ID,
@@ -411,6 +442,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
 
   blocks: seedBlocks(),
   selectedBlockId: null,
+  selectedBlockIds: [],
   selectedNoteIds: [],
   selectedSegmentStart: null,
   pianoRollOpen: true,
@@ -419,34 +451,30 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   /* --- 設定 --- */
   setBpm: (bpm) => set({ bpm: clamp(Math.round(bpm), 20, 300) }),
 
-  setTimeSignature: (sig) =>
-    transact(() =>
-    set((state) => {
-      // 拍子が変わると小節長が変わるため、範囲外のブロックを丸める
-      const limit = totalSteps(sig, state.bars);
-      const blocks = state.blocks
-        .map((b) => ({
-          ...b,
-          start: clamp(b.start, 0, Math.max(0, limit - 1)),
-          length: clamp(b.length, 1, limit),
-        }))
-        .filter((b) => b.start < limit)
-        .map((b) => ({ ...b, length: Math.min(b.length, limit - b.start) }));
-      return { timeSignature: sig, blocks };
-    }),
-    ),
+  // 拍子・小節数は「再生できる範囲（ループ・自動停止の基準）」を決めるだけで、
+  // 既存のブロック・ノートを切り詰めたりはしない。範囲より後ろにはみ出した内容は
+  // そのまま残り、タイムライン表示側が必要に応じて表示幅を伸ばす（lib/grid.ts の
+  // contentExtentSteps 参照）。DAW の「プロジェクト終端マーカー」と同じ考え方。
+  setTimeSignature: (sig) => transact(() => set({ timeSignature: sig })),
 
-  setBars: (bars) =>
-    transact(() =>
-    set((state) => {
-      const next = clamp(Math.round(bars), 1, 64);
-      const limit = totalSteps(state.timeSignature, next);
-      const blocks = state.blocks
-        .filter((b) => b.start < limit)
-        .map((b) => ({ ...b, length: Math.min(b.length, limit - b.start) }));
-      return { bars: next, blocks };
-    }),
-    ),
+  // 小節数そのものは整数だが、再生範囲スライダーは小節内を四分音符単位で
+  // 動かせるようにしたいので、ここでは「1 step（32分音符）」単位への丸めに留める
+  // （四分音符ぶんの丸めはドラッグ側が担当する。数値入力側は NumberField が
+  // Math.round 済みの整数を渡してくるので、結果的にこれまで通り整数になる）。
+  setBars: (bars) => {
+    const perStep = 1 / stepsPerBar(get().timeSignature);
+    const snapped = Math.round(bars / perStep) * perStep;
+    transact(() => set({ bars: clamp(snapped, perStep, BARS_MAX) }));
+  },
+
+  // 終了位置（bars）と同様、開始位置も小節数には縛られず自由に動かせる。
+  // 終了位置を追い越しても止めない — その場合は「入れ替わっている」として
+  // 無効な範囲になり、ループの基準は先頭（0）へフォールバックする（useTransport 側）。
+  setRangeStart: (bar) => {
+    const perStep = 1 / stepsPerBar(get().timeSignature);
+    const snapped = Math.round(bar / perStep) * perStep;
+    transact(() => set({ rangeStart: clamp(snapped, 0, BARS_MAX) }));
+  },
 
   toggleLoop: () => set((s) => ({ loop: !s.loop })),
   setQuantize: (quantize) => set({ quantize }),
@@ -460,7 +488,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     set((s) => ({ zoomX: clamp(s.zoomX * factor, ZOOM_X_MIN, ZOOM_X_MAX) })),
   zoomYBy: (factor) =>
     set((s) => ({ zoomY: clamp(s.zoomY * factor, ZOOM_Y_MIN, ZOOM_Y_MAX) })),
-  resetZoom: () => set({ zoomX: 0.5, zoomY: 1 }),
+  resetZoom: () => set({ zoomX: 0.5, zoomY: 0.8 }),
   toggleFollowPlayhead: () => set((s) => ({ followPlayhead: !s.followPlayhead })),
   setInstrument: (instrumentId) => set({ instrumentId, instrumentError: null }),
   setInstrumentStatus: (instrumentLoading, instrumentError = null) =>
@@ -473,12 +501,13 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   addBlockAt: (step) => {
     get().beginTransaction();
     const state = get();
-    const limit = totalSteps(state.timeSignature, state.bars);
     const bar = stepsPerBar(state.timeSignature);
-    const start = clamp(snapStep(step, state.quantize, state.snap), 0, limit - 1);
+    // 配置そのものは小節数に縛られない（再生範囲を超えて置ける。再生範囲は
+    // bars がそのまま基準として使われ続ける）
+    const start = Math.max(0, snapStep(step, state.quantize, state.snap));
 
     // 既存ブロックと重なる位置には作らない
-    const gap = freeGaps(state.blocks, '', limit).find(([s, e]) => start >= s && start < e);
+    const gap = freeGaps(state.blocks, '', Infinity).find(([s, e]) => start >= s && start < e);
     if (!gap) {
       get().endTransaction();
       return null;
@@ -506,6 +535,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       return {
         blocks: state.blocks.filter((b) => b.id !== id),
         selectedBlockId: state.selectedBlockId === id ? null : state.selectedBlockId,
+        selectedBlockIds: state.selectedBlockIds.filter((bid) => bid !== id),
         selectedNoteIds: state.selectedNoteIds.filter((nid) => !removedNoteIds.has(nid)),
         selectedSegmentStart:
           state.selectedBlockId === id ? null : state.selectedSegmentStart,
@@ -517,9 +547,8 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     set((state) => {
       const target = state.blocks.find((b) => b.id === id);
       if (!target) return {};
-      const limit = totalSteps(state.timeSignature, state.bars);
-      const wanted = clamp(snapStep(step, state.quantize, state.snap), 0, limit - target.length);
-      const start = placeBlock(state.blocks, id, wanted, target.length, limit);
+      const wanted = Math.max(0, snapStep(step, state.quantize, state.snap));
+      const start = placeBlock(state.blocks, id, wanted, target.length, Infinity);
       if (start === null || start === target.start) return {};
       return {
         blocks: state.blocks
@@ -532,7 +561,6 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     set((state) => {
       const target = state.blocks.find((b) => b.id === id);
       if (!target) return {};
-      const limit = totalSteps(state.timeSignature, state.bars);
       const snapped = snapLength(length, state.quantize, state.snap);
 
       if (fromStart) {
@@ -557,8 +585,8 @@ export const useProjectStore = create<ProjectState>((set, get) => {
         };
       }
 
-      // 頭を固定して末尾を動かす
-      const ceiling = nextBoundary(state.blocks, id, target.start + target.length, limit);
+      // 頭を固定して末尾を動かす（小節数には縛られない）
+      const ceiling = nextBoundary(state.blocks, id, target.start + target.length, Infinity);
       const nextLength = clamp(snapped, 1, ceiling - target.start);
       if (nextLength === target.length) return {};
       return {
@@ -578,7 +606,32 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     }),
 
   selectBlock: (selectedBlockId) =>
-    set({ selectedBlockId, selectedNoteIds: [], selectedSegmentStart: null }),
+    set({
+      selectedBlockId,
+      selectedBlockIds: [],
+      selectedNoteIds: [],
+      selectedSegmentStart: null,
+    }),
+
+  selectBlocks: (ids, additive = false) =>
+    set((state) => ({
+      selectedBlockIds: additive
+        ? [...new Set([...state.selectedBlockIds, ...ids])]
+        : [...new Set(ids)],
+      selectedNoteIds: [],
+      selectedSegmentStart: null,
+    })),
+
+  toggleBlockSelection: (id) =>
+    set((state) => ({
+      selectedBlockIds: state.selectedBlockIds.includes(id)
+        ? state.selectedBlockIds.filter((x) => x !== id)
+        : [...state.selectedBlockIds, id],
+      selectedNoteIds: [],
+      selectedSegmentStart: null,
+    })),
+
+  clearBlockSelection: () => set({ selectedBlockIds: [] }),
 
   selectSegment: (selectedSegmentStart) => set({ selectedSegmentStart }),
 
@@ -607,13 +660,8 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     if (!clip || clip.kind !== 'block') return null;
 
     get().beginTransaction();
-    const limit = totalSteps(state.timeSignature, state.bars);
-    const desired = clamp(
-      snapStep(step, state.quantize, state.snap),
-      0,
-      Math.max(0, limit - 1),
-    );
-    const start = placeBlock(state.blocks, '', desired, clip.length, limit);
+    const desired = Math.max(0, snapStep(step, state.quantize, state.snap));
+    const start = placeBlock(state.blocks, '', desired, clip.length, Infinity);
     if (start === null) {
       get().endTransaction();
       return null;
@@ -635,26 +683,61 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     return block.id;
   },
 
-  duplicateBlock: (id) => {
+  duplicateNotesToNearestGap: (noteIds) => {
     const state = get();
-    const block = state.blocks.find((b) => b.id === id);
-    if (!block) return null;
-    const limit = totalSteps(state.timeSignature, state.bars);
-    const start = placeBlock(state.blocks, '', block.start, block.length, limit);
-    if (start === null) return null;
-    const copy: ChordBlockItem = {
+    const wanted = new Set(noteIds);
+    const originals = state.blocks.flatMap((b) =>
+      b.notes.filter((n) => wanted.has(n.id)).map((n) => ({ block: b, note: n })),
+    );
+    if (originals.length === 0) return;
+
+    const minStart = Math.min(...originals.map((o) => o.block.start + o.note.start));
+    const maxEnd = Math.max(...originals.map((o) => o.block.start + o.note.start + o.note.length));
+    const spanLength = Math.max(1, maxEnd - minStart);
+
+    // 空き区間の検索も小節数には縛られない（これがそもそもの要望）
+    const gapStart = placeBlock(state.blocks, '', minStart, spanLength, Infinity);
+
+    if (gapStart === null) {
+      // 空きが見つからなければ、元の位置に重ねて複製するだけ（フォールバック）
+      const additions = new Map<string, NoteItem[]>();
+      const newIds: string[] = [];
+      for (const { block, note } of originals) {
+        const copy: NoteItem = { ...note, id: nextId('note') };
+        newIds.push(copy.id);
+        additions.set(block.id, [...(additions.get(block.id) ?? []), copy]);
+      }
+      transact(() =>
+        set({
+          blocks: state.blocks.map((b) => {
+            const add = additions.get(b.id);
+            return add ? { ...b, notes: [...b.notes, ...add] } : b;
+          }),
+          selectedNoteIds: newIds,
+        }),
+      );
+      return;
+    }
+
+    const newBlock: ChordBlockItem = {
       id: nextId('blk'),
-      start,
-      length: block.length,
-      notes: block.notes.map((n) => ({ ...n, id: nextId('note') })),
+      start: gapStart,
+      length: spanLength,
+      notes: originals.map(({ block, note }) => ({
+        ...note,
+        id: nextId('note'),
+        start: block.start + note.start - minStart,
+      })),
     };
-    set({
-      blocks: [...state.blocks, copy].sort((a, b) => a.start - b.start),
-      selectedBlockId: copy.id,
-      selectedNoteIds: [],
-      selectedSegmentStart: null,
-    });
-    return copy.id;
+
+    transact(() =>
+      set({
+        blocks: [...state.blocks, newBlock].sort((a, b) => a.start - b.start),
+        selectedBlockId: newBlock.id,
+        selectedNoteIds: newBlock.notes.map((n) => n.id),
+        selectedSegmentStart: null,
+      }),
+    );
   },
 
   /* --- ノート --- */
@@ -750,6 +833,35 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       }),
       selectedNoteIds: [],
     })),
+    ),
+
+  /**
+   * setSegmentNotes と同じ差し替えを、複数セグメントぶんまとめて1回の Undo で行う。
+   * ボイシングの一括変更（チェーン適用）などで、呼び出し側が内容を計算済みの場合に使う。
+   */
+  applyBulkSegmentNotes: (updates) =>
+    transact(() =>
+      set((state) => {
+        let blocks = state.blocks;
+        for (const u of updates) {
+          blocks = blocks.map((b) => {
+            if (b.id !== u.blockId) return b;
+            const segEnd = u.segStart + u.segLength;
+            const kept = b.notes.filter((n) => n.start >= segEnd || n.start + n.length <= u.segStart);
+            const added = u.midis
+              .filter((mi) => mi >= PITCH_MIN && mi <= PITCH_MAX)
+              .map((midi) => ({
+                id: nextId('note'),
+                midi,
+                start: u.segStart,
+                length: u.segLength,
+                velocity: 0.8,
+              }));
+            return { ...b, notes: [...kept, ...added] };
+          });
+        }
+        return { blocks, selectedNoteIds: [] };
+      }),
     ),
 
   /* --- 選択 --- */
@@ -887,13 +999,13 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   applyNoteDrag: (snapshots, dStep, dMidi) =>
     set((state) => {
       if (snapshots.length === 0) return {};
-      const limit = totalSteps(state.timeSignature, state.bars);
       const blocksById = new Map(state.blocks.map((b) => [b.id, b]));
       const absStartOf = (s: NoteDragSnapshot) => (blocksById.get(s.blockId)?.start ?? 0) + s.start;
 
+      // ノートの移動範囲も小節数には縛られない
       const step = commonDelta(snapshots, () => 0, dStep, (s) => {
         const abs = absStartOf(s);
-        return [-abs, limit - s.length - abs];
+        return [-abs, Infinity];
       });
       const midi = commonDelta(snapshots, () => 0, dMidi, (s) => [
         PITCH_MIN - s.midi,
@@ -973,6 +1085,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       set({
         blocks: [],
         selectedBlockId: null,
+        selectedBlockIds: [],
         selectedNoteIds: [],
         selectedSegmentStart: null,
       }),
@@ -988,6 +1101,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       set({
         blocks: file.blocks,
         bars: file.bars,
+        rangeStart: file.rangeStart ?? 0,
         timeSignature: file.timeSignature,
         bpm: file.bpm,
         chordResolution: file.chordResolution,
@@ -996,6 +1110,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
         instrumentId: file.instrumentId,
         volumeDb: file.volumeDb,
         selectedBlockId: null,
+        selectedBlockIds: [],
         selectedNoteIds: [],
         selectedSegmentStart: null,
         clipboard: null,

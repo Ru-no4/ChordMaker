@@ -170,6 +170,16 @@
   gap: 14px;
 }
 
+/* ---- 複数ブロック選択中 ---- */
+.inspector--multi {
+  gap: 14px;
+}
+
+.inspector--multi .inspector__label {
+  font-size: 12px;
+  color: var(--text);
+}
+
 .inspector__title {
   font-size: 10px;
   font-weight: 700;

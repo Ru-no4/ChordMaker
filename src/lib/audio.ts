@@ -25,6 +25,18 @@ export interface ScheduledNote {
   velocity?: number;
 }
 
+/**
+ * ループ中の発音をこの範囲（32分音符単位）に切り詰めるための情報。
+ * - 範囲より前に始まって範囲にかかっているノートは、範囲の先頭から鳴らす
+ *   （鳴っている途中から再生を始めても音が欠けない）。
+ * - 範囲の終端をまたぐノートは、そこで打ち切る（ループして戻っても鳴り続けない）。
+ * - 範囲に一切かからないノートはスケジュールしない。
+ */
+export interface LoopRange {
+  startStep: number;
+  endStep: number;
+}
+
 /** Tone.Part に渡すイベント。`time` は Transport tick 表記。 */
 interface PartEvent {
   time: string;
@@ -144,6 +156,7 @@ class AudioEngine {
   private currentSynthRelease = DEFAULT_SYNTH_OPTIONS.envelope.release;
   private started = false;
   private pendingNotes: ScheduledNote[] = [];
+  private pendingLoopRange: LoopRange | null = null;
   private volumeDb = -12;
 
   /** ブラウザの自動再生制限のため、ユーザー操作の中から呼ぶこと */
@@ -153,7 +166,7 @@ class AudioEngine {
     this.buildGraph();
     this.started = true;
     // init 前に設定されたノートを反映
-    this.setNotes(this.pendingNotes);
+    this.setNotes(this.pendingNotes, this.pendingLoopRange);
   }
 
   get isReady(): boolean {
@@ -395,11 +408,11 @@ class AudioEngine {
     Tone.getTransport().timeSignature = [sig.numerator, sig.denominator];
   }
 
-  setLoop(enabled: boolean, totalStepCount: number): void {
+  setLoop(enabled: boolean, loopStartStep: number, loopEndStep: number): void {
     const transport = Tone.getTransport();
     transport.loop = enabled;
-    transport.loopStart = 0;
-    transport.loopEnd = `${totalStepCount * toneTicksPerStep()}i`;
+    transport.loopStart = `${loopStartStep * toneTicksPerStep()}i`;
+    transport.loopEnd = `${loopEndStep * toneTicksPerStep()}i`;
   }
 
   /** ループ無効時に末尾で自動停止させるためのコールバック登録 */
@@ -421,20 +434,37 @@ class AudioEngine {
   /* ノートスケジューリング                                            */
   /* --------------------------------------------------------------- */
 
-  setNotes(notes: ScheduledNote[]): void {
+  /**
+   * loopRange を渡すと、そのループの間だけ発音をその範囲に切り詰めてスケジュールする。
+   * これにより「範囲の途中から鳴っているはずの音が頭から聞こえない」
+   * 「範囲の終端をまたぐ音がループしても鳴り続ける」という2つの問題を避ける。
+   * ループしていない（loopRange が null）ときは従来通り、ノート本来の長さで鳴らす。
+   */
+  setNotes(notes: ScheduledNote[], loopRange: LoopRange | null = null): void {
     this.pendingNotes = notes;
+    this.pendingLoopRange = loopRange;
     if (!this.started) return;
 
     this.part?.stop();
     this.part?.dispose();
 
     const ticksPerStep = toneTicksPerStep();
-    const events: PartEvent[] = notes.map((n) => ({
-      time: `${n.startStep * ticksPerStep}i`,
-      midi: n.midi,
-      lengthSteps: Math.max(1, n.lengthSteps),
-      velocity: n.velocity ?? 0.8,
-    }));
+    const events: PartEvent[] = [];
+    for (const n of notes) {
+      let start = n.startStep;
+      let end = start + Math.max(1, n.lengthSteps);
+      if (loopRange) {
+        start = Math.max(start, loopRange.startStep);
+        end = Math.min(end, loopRange.endStep);
+        if (end <= start) continue; // ループ範囲に一切かからない音は鳴らさない
+      }
+      events.push({
+        time: `${start * ticksPerStep}i`,
+        midi: n.midi,
+        lengthSteps: end - start,
+        velocity: n.velocity ?? 0.8,
+      });
+    }
 
     this.part = new Tone.Part<PartEvent>((time, ev) => {
       const durationSec = Tone.Time(`${ev.lengthSteps * ticksPerStep}i`).toSeconds();

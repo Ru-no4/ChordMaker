@@ -8,9 +8,14 @@
 import { PITCH_MAX, PITCH_MIN } from '../store/useProjectStore';
 import { pitchClass } from './theory';
 
-export type VoicingPreset = 'close' | 'open' | 'drop2' | 'drop3';
+export type VoicingPreset = 'root-low' | 'close' | 'open' | 'drop2' | 'drop3';
 
 export const VOICING_PRESETS: Array<{ id: VoicingPreset; label: string; title: string }> = [
+  {
+    id: 'root-low',
+    label: 'ルート低め',
+    title: 'ルート音を低いオクターブに残し、残りの構成音を1オクターブ上げる（既定のコード進行と同じパターン）',
+  },
   { id: 'close', label: 'Close', title: '構成音を1オクターブ以内に密集させる' },
   { id: 'open', label: 'Open', title: '1音おきに1オクターブ上げて間隔を広げる' },
   { id: 'drop2', label: 'Drop2', title: '上から2番目の音を1オクターブ下げる' },
@@ -55,6 +60,13 @@ function dropVoice(close: number[], fromTop: number): number[] {
   return out.sort((a, b) => a - b);
 }
 
+/** ルート音（close position の最低音）はそのまま、残りの構成音だけ1オクターブ上げる */
+function rootLowVoicing(close: number[]): number[] {
+  if (close.length === 0) return close;
+  const [root, ...rest] = close;
+  return [root, ...rest.map((m) => m + 12)].sort((a, b) => a - b);
+}
+
 /**
  * コードのルートとピッチクラス集合から、指定プリセットのボイシングを組み立てる。
  * ルートは現在の最低音の近くに置くので、極端なオクターブジャンプは起きない。
@@ -68,13 +80,15 @@ export function buildVoicing(
   const intervals = [...new Set(pcs.map((pc) => (pc - rootPc + 12) % 12))].sort((a, b) => a - b);
   const close = closeVoicing(rootPc, intervals, referenceMidi);
   const shaped =
-    preset === 'open'
-      ? openVoicing(close)
-      : preset === 'drop2'
-        ? dropVoice(close, 2)
-        : preset === 'drop3'
-          ? dropVoice(close, 3)
-          : close;
+    preset === 'root-low'
+      ? rootLowVoicing(close)
+      : preset === 'open'
+        ? openVoicing(close)
+        : preset === 'drop2'
+          ? dropVoice(close, 2)
+          : preset === 'drop3'
+            ? dropVoice(close, 3)
+            : close;
   return fitRange(shaped);
 }
 

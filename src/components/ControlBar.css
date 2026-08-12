@@ -1,9 +1,8 @@
 .control-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
-  padding: 8px 14px;
+  padding: 10px 20px;
   background: linear-gradient(180deg, var(--bg-raised) 0%, var(--bg-panel) 100%);
   border-bottom: 1px solid var(--border-strong);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 4px 14px rgba(0, 0, 0, 0.35);
@@ -19,10 +18,6 @@
   row-gap: 8px;
 }
 
-.cb-zone--right {
-  margin-left: auto;
-}
-
 .cb-sep {
   width: 1px;
   align-self: stretch;
@@ -34,6 +29,11 @@
 .cb-transport {
   display: flex;
   gap: 6px;
+}
+
+/* このグループの後ろだけ、.cb-zone の gap に加えて隙間を1段ぶん広げる */
+.cb-transport--gap-after {
+  margin-right: 14px;
 }
 
 .cb-btn {
@@ -99,10 +99,6 @@
 @media (hover: none) {
   .cb-btn {
     min-height: 40px;
-  }
-  .cb-seg {
-    min-width: 46px;
-    height: 40px;
   }
 }
 
@@ -188,44 +184,6 @@
   cursor: pointer;
 }
 
-/* ---- セグメント（Quantize） ---- */
-.cb-segmented {
-  display: inline-flex;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  overflow: hidden;
-  background: var(--bg-sunken);
-}
-
-.cb-seg {
-  min-width: 42px;
-  height: 30px;
-  padding: 0 6px;
-  border: none;
-  border-right: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-dim);
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--font-mono);
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-
-.cb-seg:last-child {
-  border-right: none;
-}
-
-.cb-seg:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text);
-}
-
-.cb-seg.is-active {
-  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-deep) 100%);
-  color: var(--accent-text);
-}
-
 /* ---- 位置表示 ---- */
 .cb-readout {
   display: flex;
@@ -257,9 +215,6 @@
 @media (max-width: 900px) {
   .cb-slider {
     width: 84px;
-  }
-  .cb-zone--right {
-    margin-left: 0;
   }
 }
 

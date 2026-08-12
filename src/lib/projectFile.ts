@@ -19,6 +19,8 @@ export interface ProjectFile {
   bpm: number;
   timeSignature: TimeSignature;
   bars: number;
+  /** 再生・ループ範囲の開始位置（小節単位）。旧ファイルには存在しないので読み込み時は 0 扱い。 */
+  rangeStart: number;
   chordResolution: ChordResolution;
   quantize: QuantizeValue;
   snap: boolean;
@@ -31,6 +33,7 @@ export interface ProjectFileSource {
   bpm: number;
   timeSignature: TimeSignature;
   bars: number;
+  rangeStart: number;
   chordResolution: ChordResolution;
   quantize: QuantizeValue;
   snap: boolean;
@@ -47,6 +50,7 @@ export function serializeProject(state: ProjectFileSource): ProjectFile {
     bpm: state.bpm,
     timeSignature: state.timeSignature,
     bars: state.bars,
+    rangeStart: state.rangeStart,
     chordResolution: state.chordResolution,
     quantize: state.quantize,
     snap: state.snap,
@@ -126,6 +130,7 @@ export function parseProjectFile(text: string): ProjectFile {
     bpm: f.bpm,
     timeSignature: { numerator: sig.numerator, denominator: sig.denominator },
     bars: f.bars,
+    rangeStart: typeof f.rangeStart === 'number' ? f.rangeStart : 0,
     chordResolution: f.chordResolution as ChordResolution,
     quantize: f.quantize as QuantizeValue,
     snap: f.snap,
