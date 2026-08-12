@@ -103,6 +103,12 @@
   transform: translateY(1px);
 }
 
+.chip:disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+
 /* 小節内のコードを切り替えるチップ */
 .chip--seg {
   gap: 6px;

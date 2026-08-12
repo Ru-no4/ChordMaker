@@ -3,6 +3,8 @@ import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent }
 import { useProjectStore } from '../store/useProjectStore';
 import {
   ZOOM_FACTOR,
+  ZOOM_X_MAX,
+  ZOOM_X_MIN,
   beatWidth,
   laneHeight,
   stepWidth,
@@ -16,6 +18,7 @@ import { useEdgeAutoScroll } from '../hooks/useEdgeAutoScroll';
 import { usePlayheadFollow } from '../hooks/usePlayheadFollow';
 import { ChordBlock } from './ChordBlock';
 import { Playhead } from './Playhead';
+import { ZoomSlider } from './ZoomSlider';
 import './ChordTimeline.css';
 
 /** 鍵盤幅と揃えた左ガター幅 */
@@ -37,6 +40,7 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
   const zoomY = useProjectStore((s) => s.zoomY);
   const zoomXBy = useProjectStore((s) => s.zoomXBy);
   const zoomYBy = useProjectStore((s) => s.zoomYBy);
+  const setZoomX = useProjectStore((s) => s.setZoomX);
 
   const { ref, onScroll } = useSyncedScroll<HTMLDivElement>();
   const panRef = useRef<{ originX: number; scrollLeft: number } | null>(null);
@@ -235,6 +239,18 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
           {/* ---- 再生ヘッド（ルーラー＋レーンを貫通） ---- */}
           <Playhead stepW={stepW} offset={GUTTER_WIDTH} variant="timeline" />
         </div>
+      </div>
+
+      {/* ---- ズームスライダー（Cubase のプロジェクト窓右下を参考） ---- */}
+      <div className="timeline__zoom">
+        <ZoomSlider
+          orientation="horizontal"
+          value={zoomX}
+          min={ZOOM_X_MIN}
+          max={ZOOM_X_MAX}
+          onChange={setZoomX}
+          ariaLabel="コードトラックの横幅表示倍率"
+        />
       </div>
     </section>
   );

@@ -1,11 +1,37 @@
 import { useMemo } from 'react';
-import { useProjectStore } from '../store/useProjectStore';
+import { useProjectStore, type ChordBlockItem } from '../store/useProjectStore';
 import { chordResolutionSteps } from '../lib/grid';
-import { candidateToMidi, midiToName } from '../lib/theory';
+import { candidateToMidi, midiToName, pitchClass } from '../lib/theory';
 import { CATEGORY_ORDER, CATEGORY_STYLES, styleFor } from '../lib/colors';
-import { segmentAt, segmentsFor } from '../lib/segmentation';
+import { segmentAt, segmentsFor, type ChordSegment } from '../lib/segmentation';
 import { useActiveSegmentStart } from '../hooks/useActiveSegment';
+import { VOICING_PRESETS, buildVoicing, voiceLeadMidis } from '../lib/voicing';
 import './ChordInspector.css';
+
+/**
+ * アクティブセグメントの直前に鳴っていたコードの実音を探す。
+ * 同じブロック内に前のセグメントがあればそれを、無ければ直前に終わる
+ * ブロックの最後のセグメントを見る（ブロックを跨いだボイスリーディング用）。
+ */
+function precedingChordMidis(
+  blocks: ChordBlockItem[],
+  resolutionSteps: number,
+  block: ChordBlockItem,
+  segment: ChordSegment,
+): number[] {
+  if (segment.start > 0) {
+    const segs = segmentsFor(block, resolutionSteps);
+    const idx = segs.findIndex((s) => s.start === segment.start);
+    if (idx > 0) return segs[idx - 1].midis;
+  }
+  const absStart = block.start + segment.start;
+  const prevBlock = blocks
+    .filter((b) => b.id !== block.id && b.start + b.length <= absStart)
+    .sort((a, b) => b.start - a.start)[0];
+  if (!prevBlock) return [];
+  const prevSegs = segmentsFor(prevBlock, resolutionSteps);
+  return prevSegs[prevSegs.length - 1]?.midis ?? [];
+}
 
 interface ChordInspectorProps {
   onPreview: (midis: number[]) => void;
@@ -32,6 +58,14 @@ export function ChordInspector({ onPreview }: ChordInspectorProps) {
   );
   const activeStart = useActiveSegmentStart(selected, segments, !!selected);
   const segment = activeStart === null ? null : segmentAt(segments, activeStart);
+
+  const precedingMidis = useMemo(
+    () =>
+      selected && segment
+        ? precedingChordMidis(blocks, resolutionSteps, selected, segment)
+        : [],
+    [blocks, resolutionSteps, selected, segment],
+  );
 
   if (!selected || !segment) {
     return (
@@ -123,6 +157,55 @@ export function ChordInspector({ onPreview }: ChordInspectorProps) {
           <span className="inspector__degrees">{detection.intervalName}</span>
         )}
       </div>
+
+      {/* ---- ボイシング ---- */}
+      {detection.kind === 'chord' && (
+        <div className="inspector__section">
+          <span className="inspector__label">ボイシング</span>
+          <div className="chip-row">
+            {VOICING_PRESETS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className="chip"
+                title={p.title}
+                onClick={() => {
+                  const pcs = [...new Set(segment.midis.map(pitchClass))];
+                  const midis = buildVoicing(
+                    detection.chord!.root,
+                    pcs,
+                    Math.min(...segment.midis),
+                    p.id,
+                  );
+                  setSegmentNotes(selected.id, segment.start, segment.length, midis);
+                  onPreview(midis);
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="chip"
+              disabled={precedingMidis.length === 0}
+              title={
+                precedingMidis.length === 0
+                  ? '直前にコードがありません'
+                  : '直前のコードの実音に近いオクターブへ各音を配置する'
+              }
+              onClick={() => {
+                const pcs = [...new Set(segment.midis.map(pitchClass))];
+                const midis = voiceLeadMidis(pcs, precedingMidis);
+                if (midis.length === 0) return;
+                setSegmentNotes(selected.id, segment.start, segment.length, midis);
+                onPreview(midis);
+              }}
+            >
+              Voice Lead
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ---- 候補提示（単音・2音） ---- */}
       {detection.kind === 'candidates' && detection.candidates.length > 0 && (

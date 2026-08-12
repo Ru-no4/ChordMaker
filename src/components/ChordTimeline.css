@@ -315,3 +315,20 @@
   background: var(--playhead);
   clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
+
+/*
+ * ズームスライダー用の帯。スクロール領域の下に別行として置くことで、
+ * 右端までスクロールしてもブロックの上に被らないようにする
+ * （Cubase のプロジェクト窓で水平スクロールバーの右にズームスライダーが
+ * 並ぶのと同じ配置）。
+ */
+.timeline__zoom {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 22px;
+  padding: 0 8px;
+  background: var(--bg-sunken);
+  border-top: 1px solid var(--border);
+  flex: 0 0 auto;
+}

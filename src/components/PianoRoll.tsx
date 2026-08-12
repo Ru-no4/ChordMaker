@@ -3,6 +3,10 @@ import type { WheelEvent as ReactWheelEvent } from 'react';
 import { useProjectStore } from '../store/useProjectStore';
 import {
   ZOOM_FACTOR,
+  ZOOM_X_MAX,
+  ZOOM_X_MIN,
+  ZOOM_Y_MAX,
+  ZOOM_Y_MIN,
   beatWidth,
   chordResolutionSteps,
   stepWidth,
@@ -20,6 +24,7 @@ import { GUTTER_WIDTH } from './ChordTimeline';
 import { Keyboard } from './Keyboard';
 import { Note } from './Note';
 import { Playhead } from './Playhead';
+import { ZoomSlider } from './ZoomSlider';
 import './PianoRoll.css';
 
 interface PianoRollProps {
@@ -41,6 +46,8 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
   const zoomY = useProjectStore((s) => s.zoomY);
   const zoomXBy = useProjectStore((s) => s.zoomXBy);
   const zoomYBy = useProjectStore((s) => s.zoomYBy);
+  const setZoomX = useProjectStore((s) => s.setZoomX);
+  const setZoomY = useProjectStore((s) => s.setZoomY);
 
   const { ref, onScroll } = useSyncedScroll<HTMLDivElement>();
   const gridRef = useRef<HTMLDivElement | null>(null);
@@ -165,91 +172,117 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
         </div>
       </div>
 
-      <div className="pr-body" ref={ref} onScroll={onScroll} onWheel={onWheel}>
-        <div className="pr-inner" style={{ width: GUTTER_WIDTH + laneWidth, height }}>
-          <div className="pr-keys">
-            <Keyboard activePitches={activePitches} zoomY={zoomY} onPreview={onPreview} />
-          </div>
-
-          <div
-            ref={gridRef}
-            className="pr-grid"
-            data-tool={editorTool}
-            style={{ width: laneWidth, height, ...gridStyle }}
-            {...handlers}
-          >
-            {/* 行の明暗（黒鍵行を暗く） */}
-            <div className="pr-rows" aria-hidden="true">
-              {PITCHES.map((midi) => (
-                <div
-                  key={midi}
-                  className={[
-                    'pr-row',
-                    isBlackKey(midi) ? 'pr-row--black' : 'pr-row--white',
-                    pitchClass(midi) === 0 ? 'pr-row--octave' : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                  style={{ height: rowH }}
-                />
-              ))}
+      <div className="pr-main">
+        <div className="pr-body" ref={ref} onScroll={onScroll} onWheel={onWheel}>
+          <div className="pr-inner" style={{ width: GUTTER_WIDTH + laneWidth, height }}>
+            <div className="pr-keys">
+              <Keyboard activePitches={activePitches} zoomY={zoomY} onPreview={onPreview} />
             </div>
 
-            {/* ブロック範囲。選択中は明るく、他はグレー */}
-            {blocks.map((b) => (
-              <div
-                key={b.id}
-                className={`pr-region ${b.id === selectedBlockId ? 'is-active' : ''}`}
-                style={{ left: b.start * stepW, width: b.length * stepW }}
-              />
-            ))}
+            <div
+              ref={gridRef}
+              className="pr-grid"
+              data-tool={editorTool}
+              style={{ width: laneWidth, height, ...gridStyle }}
+              {...handlers}
+            >
+              {/* 行の明暗（黒鍵行を暗く） */}
+              <div className="pr-rows" aria-hidden="true">
+                {PITCHES.map((midi) => (
+                  <div
+                    key={midi}
+                    className={[
+                      'pr-row',
+                      isBlackKey(midi) ? 'pr-row--black' : 'pr-row--white',
+                      pitchClass(midi) === 0 ? 'pr-row--octave' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    style={{ height: rowH }}
+                  />
+                ))}
+              </div>
 
-            {/* 選択ブロック内のコードの切れ目。上のコードトラックと位置が揃う */}
-            {selected &&
-              segments.slice(1).map((seg) => (
+              {/* ブロック範囲。選択中は明るく、他はグレー */}
+              {blocks.map((b) => (
                 <div
-                  key={seg.start}
-                  className="pr-seg-divider"
-                  style={{ left: (selected.start + seg.start) * stepW }}
+                  key={b.id}
+                  className={`pr-region ${b.id === selectedBlockId ? 'is-active' : ''}`}
+                  style={{ left: b.start * stepW, width: b.length * stepW }}
                 />
               ))}
 
-            {/*
-              ノートはブロックを跨いで編集できる。
-              選択中ブロック以外は控えめに描くが、選択・移動・削除は同じように行える。
-            */}
-            {blocks.flatMap((b) => {
-              const segs = segmentsFor(b, resolutionSteps);
-              return b.notes.map((n) => (
-                <Note
-                  key={n.id}
-                  note={n}
-                  blockStart={b.start}
-                  stepW={stepW}
-                  zoomY={zoomY}
-                  style={styleFor(segmentAt(segs, n.start)?.detection.chord?.category ?? null)}
-                  selected={selectedSet.has(n.id)}
-                  erasing={eraseSet.has(n.id)}
-                  dimmed={b.id !== selectedBlockId}
+              {/* 選択ブロック内のコードの切れ目。上のコードトラックと位置が揃う */}
+              {selected &&
+                segments.slice(1).map((seg) => (
+                  <div
+                    key={seg.start}
+                    className="pr-seg-divider"
+                    style={{ left: (selected.start + seg.start) * stepW }}
+                  />
+                ))}
+
+              {/*
+                ノートはブロックを跨いで編集できる。
+                選択中ブロック以外は控えめに描くが、選択・移動・削除は同じように行える。
+              */}
+              {blocks.flatMap((b) => {
+                const segs = segmentsFor(b, resolutionSteps);
+                return b.notes.map((n) => (
+                  <Note
+                    key={n.id}
+                    note={n}
+                    blockStart={b.start}
+                    stepW={stepW}
+                    zoomY={zoomY}
+                    style={styleFor(segmentAt(segs, n.start)?.detection.chord?.category ?? null)}
+                    selected={selectedSet.has(n.id)}
+                    erasing={eraseSet.has(n.id)}
+                    dimmed={b.id !== selectedBlockId}
+                  />
+                ));
+              })}
+
+              {marquee && (
+                <div
+                  className="pr-marquee"
+                  style={{
+                    left: marquee.left,
+                    top: marquee.top,
+                    width: marquee.width,
+                    height: marquee.height,
+                  }}
                 />
-              ));
-            })}
+              )}
 
-            {marquee && (
-              <div
-                className="pr-marquee"
-                style={{
-                  left: marquee.left,
-                  top: marquee.top,
-                  width: marquee.width,
-                  height: marquee.height,
-                }}
-              />
-            )}
-
-            <Playhead stepW={stepW} variant="roll" />
+              <Playhead stepW={stepW} variant="roll" />
+            </div>
           </div>
         </div>
+
+        {/* ---- 縦ズーム（右端、縦スクロールバーの隣。Cubase のキーエディタを参考） ---- */}
+        <div className="pr-vzoom">
+          <ZoomSlider
+            orientation="vertical"
+            value={zoomY}
+            min={ZOOM_Y_MIN}
+            max={ZOOM_Y_MAX}
+            onChange={setZoomY}
+            ariaLabel="ピアノロールの縦方向表示倍率"
+          />
+        </div>
+      </div>
+
+      {/* ---- 横ズーム（下端、水平スクロールバーの隣） ---- */}
+      <div className="pr-footer">
+        <ZoomSlider
+          orientation="horizontal"
+          value={zoomX}
+          min={ZOOM_X_MIN}
+          max={ZOOM_X_MAX}
+          onChange={setZoomX}
+          ariaLabel="ピアノロールの横幅表示倍率"
+        />
       </div>
     </section>
   );

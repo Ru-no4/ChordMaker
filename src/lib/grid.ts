@@ -27,8 +27,12 @@ export const stepsPerBar = (sig: TimeSignature): number =>
 /* 表示倍率                                                            */
 /* ------------------------------------------------------------------ */
 
-/** 倍率100%のときの1拍の幅(px) */
-export const BASE_BEAT_WIDTH = 96;
+/**
+ * 倍率100%のときの1拍の幅(px)。
+ * 従来値(96px)は狭いというフィードバックを受け、それが新しい基準で
+ * 70%表示に相当するよう引き上げた（96 / 0.7 ≈ 137px）。
+ */
+export const BASE_BEAT_WIDTH = 96 / 0.7;
 /** 倍率100%のときのコードブロックの高さ(px) */
 export const BASE_BLOCK_HEIGHT = 60;
 /** 倍率100%のときのコードレーンの高さ(px) */

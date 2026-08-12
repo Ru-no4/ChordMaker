@@ -14,7 +14,7 @@
 import * as Tone from 'tone';
 import { Soundfont, SplendidGrandPiano } from 'smplr';
 import type { TimeSignature } from './grid';
-import { SPLENDID_ID, SYNTH_ID, findInstrument } from './instruments';
+import { DEFAULT_SYNTH_OPTIONS, SPLENDID_ID, SYNTH_ID, findInstrument } from './instruments';
 
 export interface ScheduledNote {
   midi: number;
@@ -42,12 +42,46 @@ interface SampledInstrument {
   dispose(): void;
 }
 
-/** 通常のリリース（余韻）秒数 */
-const NOTE_RELEASE = 1.1;
 /** 停止時に音を切るための短いリリース秒数 */
 const STOP_RELEASE = 0.02;
 /** 発音の最短時間。ごく短いノートでも音として聞こえるようにする下限。 */
 const MIN_DURATION = 0.03;
+
+/* ------------------------------------------------------------------ */
+/* 音量の正規化                                                        */
+/*                                                                      */
+/* 音源によって「同じつもりで鳴らしても」聞こえ方の大きさが揃わない。      */
+/* 原因は2つあるので、別々に補正する。                                   */
+/*  1. 内蔵シンセの波形差 — 矩形波は三角波と同じピークでも実効値(RMS)が   */
+/*     √3 倍あり、はっきり大きく聞こえる。これは波形の数式から厳密に      */
+/*     計算できるので、波形ごとの固定トリム値で打ち消す。                 */
+/*  2. サンプル音源ごとの録音レベル差 — GM 128音色や Splendid Grand      */
+/*     Piano は元の収録レベルがバラバラなので、計算では出せない。         */
+/*     そのため実際に鳴った音を計測し、内蔵シンセを基準にゲインを         */
+/*     自動補正する（初回は基準値ぶんズレるが、以降のノートから揃う）。   */
+/* ------------------------------------------------------------------ */
+
+/** 内蔵シンセの基準音量（既定は三角波・正弦波の中間くらいを狙う） */
+const BASE_SYNTH_VOLUME_DB = -6;
+
+/**
+ * 波形ごとの実効値(RMS)の違いを打ち消すトリム。三角波・のこぎり波を基準(0dB)に、
+ * 矩形波は 20*log10((1/√3)/1) ≈ -4.8dB、正弦波は 20*log10((1/√3)/(1/√2)) ≈ -1.8dB。
+ */
+const WAVEFORM_TRIM_DB: Record<string, number> = {
+  triangle: 0,
+  sawtooth: 0,
+  square: -4.8,
+  sine: -1.8,
+};
+
+/** シンセの実測前に使う暫定の基準ラウドネス（三角波・-6dB・sustain 0.55 からの理論値） */
+const FALLBACK_TARGET_RMS = 0.16;
+/** ノート開始からどれだけ待って音量を計測するか（アタックの過渡を避ける） */
+const CALIBRATION_DELAY_MS = 120;
+/** 補正ゲインの許容範囲。極端な補正はノイズや無音の誤検出とみなして避ける。 */
+const MIN_CORRECTION_GAIN = 0.15;
+const MAX_CORRECTION_GAIN = 4;
 
 /**
  * 鳴っている1音の後始末。
@@ -83,6 +117,18 @@ class AudioEngine {
   private limiter: Tone.Limiter | null = null;
   /** サンプル音源をエフェクト経路へ入れるためのネイティブノード */
   private sampledBus: GainNode | null = null;
+  /** サンプル音源の自動音量補正（音源ごとに学習したゲインを掛ける） */
+  private sampledTrim: GainNode | null = null;
+  /** 音量計測用の分岐先。音声経路そのものには影響しない。 */
+  private sampledAnalyser: AnalyserNode | null = null;
+  private synthAnalyser: AnalyserNode | null = null;
+  /** 音源ID → 学習済みの補正ゲイン（線形） */
+  private sampledGainCache = new Map<string, number>();
+  /** 計測中の音源ID。二重に計測しないための見張り。 */
+  private calibratingSampledId: string | null = null;
+  /** 基準ラウドネス。内蔵シンセの実測値で自己補正される。 */
+  private targetRms = FALLBACK_TARGET_RMS;
+  private synthTargetCalibrated = false;
 
   private sampled: SampledInstrument | null = null;
   private instrumentId: string = SYNTH_ID;
@@ -94,6 +140,8 @@ class AudioEngine {
 
   private part: Tone.Part<PartEvent> | null = null;
   private releaseRestoreTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 現在の synth 系プリセットの通常リリース秒数（silenceNow からの復帰先） */
+  private currentSynthRelease = DEFAULT_SYNTH_OPTIONS.envelope.release;
   private started = false;
   private pendingNotes: ScheduledNote[] = [];
   private volumeDb = -12;
@@ -117,30 +165,79 @@ class AudioEngine {
     this.master = new Tone.Volume(this.volumeDb).connect(this.limiter);
     this.reverb = new Tone.Reverb({ decay: 2.4, wet: 0.16 }).connect(this.master);
 
+    // 初回再生前に synth 系プリセットへ切り替えられている場合があるので、
+    // ここで初めて作る synth にもその設定を反映する
+    // （切り替え時点では this.synth がまだ無く .set() が効かないため）。
+    const activePreset = findInstrument(this.instrumentId);
+    const synthOpts =
+      activePreset?.kind === 'synth' ? (activePreset.synth ?? DEFAULT_SYNTH_OPTIONS) : DEFAULT_SYNTH_OPTIONS;
+    this.currentSynthRelease = synthOpts.envelope.release;
+
     this.synth = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: 'triangle' },
-      // 「叩いた」ように聞こえる正体は attack の速さそのものより、
-      // ピーク直後に sustain まで一気に落ちる decay の勢い。
-      // attack を耳で分かる長さまで伸ばし、decay は緩やかな直線で、
-      // sustain も高めに保つことで、アタック感の強い打撃音から
-      // 電子ピアノ寄りの柔らかい鳴り方に変える。
-      envelope: {
-        attack: 0.06,
-        attackCurve: 'sine',
-        decay: 0.5,
-        decayCurve: 'linear',
-        sustain: 0.55,
-        release: NOTE_RELEASE,
-      },
+      oscillator: synthOpts.oscillator,
+      envelope: synthOpts.envelope,
     }).connect(this.reverb);
     this.synth.maxPolyphony = 64;
-    this.synth.volume.value = -6;
+    this.synth.volume.value = BASE_SYNTH_VOLUME_DB + (WAVEFORM_TRIM_DB[synthOpts.oscillator.type] ?? 0);
 
     // smplr はネイティブの AudioNode しか受け取らないので、
     // 中継用の GainNode を Tone のエフェクト経路へ差し込む
     const raw = Tone.getContext().rawContext;
+
+    // シンセの実測レベルを正規化の基準にする（音声経路には影響しない計測用の枝分かれ）
+    this.synthAnalyser = raw.createAnalyser();
+    this.synthAnalyser.fftSize = 4096;
+    Tone.connect(this.synth, this.synthAnalyser);
+
+    // サンプル音源は録音レベルがバラバラなので、間に補正用ゲインを挟む
     this.sampledBus = raw.createGain();
-    Tone.connect(this.sampledBus, this.reverb);
+    this.sampledTrim = raw.createGain();
+    this.sampledAnalyser = raw.createAnalyser();
+    this.sampledAnalyser.fftSize = 4096;
+    this.sampledBus.connect(this.sampledTrim);
+    this.sampledTrim.connect(this.sampledAnalyser);
+    Tone.connect(this.sampledTrim, this.reverb);
+  }
+
+  /** 直近 fftSize サンプルの実効値(RMS) */
+  private measureRms(analyser: AnalyserNode): number {
+    const buf = new Float32Array(analyser.fftSize);
+    analyser.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+    return Math.sqrt(sum / buf.length);
+  }
+
+  /** 内蔵シンセの実測値で基準ラウドネスを更新する（初回だけでよい。波形間の相対関係は理論値で揃っているため） */
+  private maybeCalibrateSynthTarget(): void {
+    if (this.synthTargetCalibrated || !this.synthAnalyser) return;
+    this.synthTargetCalibrated = true;
+    const analyser = this.synthAnalyser;
+    setTimeout(() => {
+      const measured = this.measureRms(analyser);
+      if (measured > 0.001) this.targetRms = measured;
+    }, CALIBRATION_DELAY_MS);
+  }
+
+  /** サンプル音源1つぶんの音量を、鳴った実音から自動で基準へ合わせる */
+  private maybeCalibrateSampled(): void {
+    const id = this.instrumentId;
+    if (this.sampledGainCache.has(id) || this.calibratingSampledId === id) return;
+    this.calibratingSampledId = id;
+    const analyser = this.sampledAnalyser;
+    const trim = this.sampledTrim;
+    setTimeout(() => {
+      this.calibratingSampledId = null;
+      if (!analyser || !trim || this.instrumentId !== id) return; // 計測前に切り替えられた
+      const measured = this.measureRms(analyser);
+      if (measured <= 0.001) return; // 無音（発音失敗など）は補正しない
+      const gain = Math.min(
+        MAX_CORRECTION_GAIN,
+        Math.max(MIN_CORRECTION_GAIN, this.targetRms / measured),
+      );
+      this.sampledGainCache.set(id, gain);
+      trim.gain.setTargetAtTime(gain, Tone.now(), 0.05);
+    }, CALIBRATION_DELAY_MS);
   }
 
   /* --------------------------------------------------------------- */
@@ -156,18 +253,29 @@ class AudioEngine {
    * 読み込みが終わるまでは内蔵シンセのまま鳴るので、操作は止まらない。
    */
   async loadInstrument(id: string): Promise<void> {
-    if (id === this.instrumentId && (id === SYNTH_ID || this.sampled)) return;
+    const preset = findInstrument(id);
+    if (!preset) throw new Error(`未知の音色: ${id}`);
 
-    const token = ++this.loadToken;
-    this.instrumentId = id;
-
-    if (id === SYNTH_ID) {
+    // synth 系（内蔵シンセ / 8bit プリセット）は波形とエンベロープを
+    // 差し替えるだけで、ネットワーク読み込みが要らない。
+    if (preset.kind === 'synth') {
+      if (id === this.instrumentId && !this.sampled) return;
+      this.instrumentId = id;
       this.disposeSampled();
+      const opts = preset.synth ?? DEFAULT_SYNTH_OPTIONS;
+      this.currentSynthRelease = opts.envelope.release;
+      this.synth?.set({ oscillator: opts.oscillator, envelope: opts.envelope });
+      if (this.synth) {
+        this.synth.volume.value =
+          BASE_SYNTH_VOLUME_DB + (WAVEFORM_TRIM_DB[opts.oscillator.type] ?? 0);
+      }
       return;
     }
 
-    const preset = findInstrument(id);
-    if (!preset) throw new Error(`未知の音色: ${id}`);
+    if (id === this.instrumentId && this.sampled) return;
+
+    const token = ++this.loadToken;
+    this.instrumentId = id;
 
     await this.ensureStarted();
     const context = Tone.getContext().rawContext as BaseAudioContext;
@@ -196,6 +304,11 @@ class AudioEngine {
 
     this.disposeSampled();
     this.sampled = instrument;
+
+    // この音源で既に学習済みのゲインがあれば即適用。無ければ実音を鳴らした
+    // ときに自動計測されるまで、収録レベルそのまま（ニュートラル）で鳴らす。
+    const cached = this.sampledGainCache.get(id);
+    this.sampledTrim?.gain.setTargetAtTime(cached ?? 1, Tone.now(), 0.01);
   }
 
   private disposeSampled(): void {
@@ -236,6 +349,7 @@ class AudioEngine {
         velocity: toMidiVelocity(velocity),
         time: timeSec,
       });
+      this.maybeCalibrateSampled();
       const voice: ActiveVoice = {
         stop: () => {
           try {
@@ -257,6 +371,7 @@ class AudioEngine {
     if (!synth) return;
     const freq = Tone.Frequency(midi, 'midi').toFrequency();
     synth.triggerAttack(freq, timeSec, velocity);
+    this.maybeCalibrateSynthTarget();
 
     const voice: ActiveVoice = {
       stop: () => synth.triggerRelease(freq, Tone.now()),
@@ -373,8 +488,9 @@ class AudioEngine {
 
     if (synth) {
       if (this.releaseRestoreTimer !== null) clearTimeout(this.releaseRestoreTimer);
+      const release = this.currentSynthRelease;
       this.releaseRestoreTimer = setTimeout(() => {
-        synth.set({ envelope: { release: NOTE_RELEASE } });
+        synth.set({ envelope: { release } });
         this.releaseRestoreTimer = null;
       }, STOP_RELEASE * 1000 + 40);
     }

@@ -28,12 +28,15 @@ export function ChordBlock({ block, stepW, zoomY, selected }: ChordBlockProps) {
   const moveBlock = useProjectStore((s) => s.moveBlock);
   const resizeBlock = useProjectStore((s) => s.resizeBlock);
   const removeBlock = useProjectStore((s) => s.removeBlock);
+  const duplicateBlock = useProjectStore((s) => s.duplicateBlock);
   const editorTool = useProjectStore((s) => s.editorTool);
   const timeSignature = useProjectStore((s) => s.timeSignature);
   const chordResolution = useProjectStore((s) => s.chordResolution);
 
   const dragRef = useRef<{
     mode: DragMode;
+    /** Ctrl ドラッグで複製した場合、動かす対象は複製の方になる */
+    targetId: string;
     originX: number;
     originY: number;
     pointerType: string;
@@ -75,19 +78,39 @@ export function ChordBlock({ block, stepW, zoomY, selected }: ChordBlockProps) {
       }
 
       capturePointer(e.currentTarget as HTMLElement, e.pointerId);
-      // 掴んでから離すまでを1回の Undo にまとめる
+      // 掴んでから離すまでを1回の Undo にまとめる（複製もこの中に入れる）
       useProjectStore.getState().beginTransaction();
+
+      let targetId = block.id;
+      let origStart = block.start;
+      let origLength = block.length;
+
+      // Ctrl(Cmd)+ドラッグ: 複製した方を掴んで動かす
+      if (mode === 'move' && (e.ctrlKey || e.metaKey)) {
+        const dupId = duplicateBlock(block.id);
+        const dup = dupId ? useProjectStore.getState().blocks.find((b) => b.id === dupId) : null;
+        if (dup) {
+          targetId = dup.id;
+          origStart = dup.start;
+          origLength = dup.length;
+        } else {
+          selectBlock(block.id);
+        }
+      } else {
+        selectBlock(block.id);
+      }
+
       dragRef.current = {
         mode,
+        targetId,
         originX: e.clientX,
         originY: e.clientY,
         pointerType: e.pointerType,
-        origStart: block.start,
-        origLength: block.length,
+        origStart,
+        origLength,
         moved: false,
         wasSelected: selected,
       };
-      selectBlock(block.id);
 
       // 掴んだ位置のセグメントをアクティブにする
       if (mode === 'move') {
@@ -95,7 +118,18 @@ export function ChordBlock({ block, stepW, zoomY, selected }: ChordBlockProps) {
         selectSegment((e.clientX - rect.left) / stepW);
       }
     },
-    [block.id, block.start, block.length, editorTool, removeBlock, selectBlock, selectSegment, selected, stepW],
+    [
+      block.id,
+      block.start,
+      block.length,
+      duplicateBlock,
+      editorTool,
+      removeBlock,
+      selectBlock,
+      selectSegment,
+      selected,
+      stepW,
+    ],
   );
 
   const onPointerMove = useCallback(
@@ -110,17 +144,17 @@ export function ChordBlock({ block, stepW, zoomY, selected }: ChordBlockProps) {
 
       switch (drag.mode) {
         case 'move':
-          moveBlock(block.id, drag.origStart + deltaSteps);
+          moveBlock(drag.targetId, drag.origStart + deltaSteps);
           break;
         case 'resize-right':
-          resizeBlock(block.id, drag.origLength + deltaSteps);
+          resizeBlock(drag.targetId, drag.origLength + deltaSteps);
           break;
         case 'resize-left':
-          resizeBlock(block.id, drag.origLength - deltaSteps, true);
+          resizeBlock(drag.targetId, drag.origLength - deltaSteps, true);
           break;
       }
     },
-    [block.id, moveBlock, resizeBlock, stepW],
+    [moveBlock, resizeBlock, stepW],
   );
 
   const onPointerUp = useCallback(

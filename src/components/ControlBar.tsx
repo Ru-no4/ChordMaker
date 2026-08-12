@@ -9,8 +9,8 @@ import {
 import { InstrumentSelect } from './InstrumentSelect';
 import { NumberField } from './NumberField';
 import { PositionReadout } from './PositionReadout';
+import { ProjectFileControls } from './ProjectFileControls';
 import { ToolStrip } from './ToolStrip';
-import { ZoomControl } from './ZoomControl';
 import './ControlBar.css';
 
 const TIME_SIGNATURES = [
@@ -194,6 +194,8 @@ export function ControlBar({
           </button>
         </div>
 
+        <ProjectFileControls />
+
         <PositionReadout />
 
         <div className="cb-sep" />
@@ -317,8 +319,6 @@ export function ControlBar({
         <div className="cb-sep" />
 
         <InstrumentSelect />
-
-        <ZoomControl />
 
         <div className="cb-field cb-field--volume">
           <label className="cb-label" htmlFor="vol-slider">

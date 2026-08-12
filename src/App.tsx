@@ -7,6 +7,7 @@ import { ShortcutHelp } from './components/ShortcutHelp';
 import { TOOLS } from './components/ToolStrip';
 import { useTransport } from './hooks/useTransport';
 import { useProjectStore, type EditorTool } from './store/useProjectStore';
+import { usePlayheadStore } from './store/usePlayheadStore';
 import './styles/app.css';
 
 /** ステータスバーに出す、そのツールで今できること */
@@ -42,6 +43,11 @@ export default function App() {
   const pianoRollOpen = useProjectStore((s) => s.pianoRollOpen);
   const undo = useProjectStore((s) => s.undo);
   const redo = useProjectStore((s) => s.redo);
+  const clipboard = useProjectStore((s) => s.clipboard);
+  const copyBlock = useProjectStore((s) => s.copyBlock);
+  const pasteBlockAt = useProjectStore((s) => s.pasteBlockAt);
+  const copySelectedNotes = useProjectStore((s) => s.copySelectedNotes);
+  const pasteNotesAt = useProjectStore((s) => s.pasteNotesAt);
 
   const closeHelp = useCallback(() => setHelpOpen(false), []);
 
@@ -74,6 +80,20 @@ export default function App() {
             e.preventDefault();
             selectAllNotesInBlock(selectedBlockId);
             return;
+          case 'KeyC':
+            if (selectedNoteIds.length > 0) copySelectedNotes();
+            else if (selectedBlockId) copyBlock(selectedBlockId);
+            else return;
+            e.preventDefault();
+            return;
+          case 'KeyV': {
+            if (!clipboard) return;
+            e.preventDefault();
+            const step = usePlayheadStore.getState().step;
+            if (clipboard.kind === 'notes') pasteNotesAt(step);
+            else pasteBlockAt(step);
+            return;
+          }
         }
       }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -123,11 +143,16 @@ export default function App() {
     removeSelectedNotes,
     selectAllNotesInBlock,
     selectedBlockId,
-    selectedNoteIds.length,
+    selectedNoteIds,
     setEditorTool,
     setPianoRollOpen,
     undo,
     redo,
+    clipboard,
+    copyBlock,
+    pasteBlockAt,
+    copySelectedNotes,
+    pasteNotesAt,
   ]);
 
   const tool = TOOLS.find((t) => t.id === editorTool);

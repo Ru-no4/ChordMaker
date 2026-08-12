@@ -8,7 +8,9 @@
 }
 
 /* 折りたたみ（スライドダウン） */
-.piano-roll .pr-body {
+.piano-roll .pr-main {
+  display: flex;
+  min-height: 0;
   max-height: 0;
   opacity: 0;
   overflow: hidden;
@@ -19,10 +21,38 @@
   flex: 1 1 auto;
 }
 
-.piano-roll.is-open .pr-body {
+.piano-roll.is-open .pr-main {
   max-height: 60vh;
   opacity: 1;
+}
+
+.pr-body {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: auto;
+}
+
+/* ---- ズームスライダーの帯（Cubase のキーエディタ右下を参考） ---- */
+.pr-vzoom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 24px;
+  padding: 6px 0;
+  background: var(--bg-sunken);
+  border-left: 1px solid var(--border);
+}
+
+.pr-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 22px;
+  padding: 0 8px;
+  background: var(--bg-sunken);
+  border-top: 1px solid var(--border);
+  flex: 0 0 auto;
 }
 
 /* ---- ヘッダー ---- */

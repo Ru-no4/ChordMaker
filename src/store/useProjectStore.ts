@@ -14,6 +14,7 @@ import {
   type TimeSignature,
 } from '../lib/grid';
 import { DEFAULT_INSTRUMENT_ID } from '../lib/instruments';
+import type { ProjectFile } from '../lib/projectFile';
 
 /* ------------------------------------------------------------------ */
 /* モデル                                                              */
@@ -53,6 +54,19 @@ export interface NoteDragSnapshot {
   midi: number;
 }
 
+/** クリップボード（コピー元は選択の種類に応じてどちらか片方だけ持つ） */
+export interface ClipboardBlockPayload {
+  kind: 'block';
+  length: number;
+  notes: Array<{ midi: number; start: number; length: number; velocity: number }>;
+}
+export interface ClipboardNotesPayload {
+  kind: 'notes';
+  /** コピー元の中で一番左のノートを基準にした相対位置 */
+  entries: Array<{ offset: number; midi: number; length: number; velocity: number }>;
+}
+export type ClipboardPayload = ClipboardBlockPayload | ClipboardNotesPayload;
+
 /** ピアノロールの表示範囲: C2〜C5（3オクターブ） */
 export const PITCH_MIN = 36; // C2
 export const PITCH_MAX = 72; // C5
@@ -82,13 +96,18 @@ function makeBlock(start: number, length: number, midis: number[]): ChordBlockIt
   };
 }
 
+/** ルート音はそのまま、残りの構成音を1オクターブ上げる */
+function rootLowVoicing(root: number, ...rest: number[]): number[] {
+  return [root, ...rest.map((m) => m + 12)];
+}
+
 function seedBlocks(): ChordBlockItem[] {
   const bar = stepsPerBar(DEFAULT_SIG); // 32
   return [
-    makeBlock(bar * 0, bar, [48, 52, 55, 59]), // Cmaj7
-    makeBlock(bar * 1, bar, [45, 48, 52, 55]), // Am7
-    makeBlock(bar * 2, bar, [50, 53, 57, 60]), // Dm7
-    makeBlock(bar * 3, bar, [43, 47, 50, 53]), // G7
+    makeBlock(bar * 0, bar, rootLowVoicing(44, 48, 51, 55)), // Abmaj7
+    makeBlock(bar * 1, bar, rootLowVoicing(43, 47, 50, 53)), // G7
+    makeBlock(bar * 2, bar, rootLowVoicing(48, 51, 55, 58)), // Cm7
+    makeBlock(bar * 3, bar, rootLowVoicing(51, 55, 58)), // Eb
   ];
 }
 
@@ -177,6 +196,8 @@ interface ProjectState {
   /** 選択中ブロック内の相対 step。null なら再生ヘッド/先頭で解決する。 */
   selectedSegmentStart: number | null;
   pianoRollOpen: boolean;
+  /** コピー内容。ブロック / ノートのどちらかを持つ（同時には持たない）。 */
+  clipboard: ClipboardPayload | null;
 
   /* --- アクション --- */
   setBpm: (bpm: number) => void;
@@ -213,6 +234,9 @@ interface ProjectState {
   selectBlock: (id: string | null) => void;
   selectSegment: (relStep: number | null) => void;
   setPianoRollOpen: (open: boolean) => void;
+  copyBlock: (id: string) => void;
+  pasteBlockAt: (step: number) => string | null;
+  duplicateBlock: (id: string) => string | null;
 
   /** 追加したノートの id を返す（描画直後にドラッグで長さを決めるため） */
   addNote: (blockId: string, midi: number, start: number, length: number) => string | null;
@@ -231,11 +255,14 @@ interface ProjectState {
   toggleNoteSelection: (id: string) => void;
   clearNoteSelection: () => void;
   selectAllNotesInBlock: (blockId: string) => void;
+  copySelectedNotes: () => void;
+  pasteNotesAt: (step: number) => void;
   duplicateSelectedNotes: () => NoteDragSnapshot[];
   applyNoteDrag: (snapshots: NoteDragSnapshot[], dStep: number, dMidi: number) => void;
   applyNoteResize: (snapshots: NoteDragSnapshot[], dLength: number) => void;
 
   clearAll: () => void;
+  loadProject: (file: ProjectFile) => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -300,6 +327,28 @@ function prevBoundary(blocks: ChordBlockItem[], id: string, until: number): numb
   );
 }
 
+/**
+ * 絶対 step を含むブロックを返す。無ければ最も近いブロック（ブロックが
+ * 1つも無ければ null）。ノートは常にどこかのブロックに属する必要があるため、
+ * 空白へ移動・貼り付けしようとした場合はここで最寄りのブロックへ寄せる。
+ */
+function resolveNoteTarget(blocks: ChordBlockItem[], absStart: number): ChordBlockItem | null {
+  const covering = blocks.find((b) => absStart >= b.start && absStart < b.start + b.length);
+  if (covering) return covering;
+
+  let nearest: ChordBlockItem | null = null;
+  let bestDist = Infinity;
+  for (const b of blocks) {
+    const dist =
+      absStart < b.start ? b.start - absStart : absStart - (b.start + b.length) + 1;
+    if (dist < bestDist) {
+      bestDist = dist;
+      nearest = b;
+    }
+  }
+  return nearest;
+}
+
 /* ------------------------------------------------------------------ */
 /* 複数ノート編集のヘルパ                                               */
 /* ------------------------------------------------------------------ */
@@ -335,7 +384,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   };
 
   return {
-  bpm: 120,
+  bpm: 160,
   timeSignature: DEFAULT_SIG,
   bars: DEFAULT_BARS,
   loop: true,
@@ -345,7 +394,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
 
   chordResolution: 4,
   editorTool: 'draw',
-  zoomX: 1,
+  zoomX: 0.5,
   zoomY: 1,
   followPlayhead: true,
 
@@ -365,6 +414,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   selectedNoteIds: [],
   selectedSegmentStart: null,
   pianoRollOpen: true,
+  clipboard: null,
 
   /* --- 設定 --- */
   setBpm: (bpm) => set({ bpm: clamp(Math.round(bpm), 20, 300) }),
@@ -410,7 +460,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     set((s) => ({ zoomX: clamp(s.zoomX * factor, ZOOM_X_MIN, ZOOM_X_MAX) })),
   zoomYBy: (factor) =>
     set((s) => ({ zoomY: clamp(s.zoomY * factor, ZOOM_Y_MIN, ZOOM_Y_MAX) })),
-  resetZoom: () => set({ zoomX: 1, zoomY: 1 }),
+  resetZoom: () => set({ zoomX: 0.5, zoomY: 1 }),
   toggleFollowPlayhead: () => set((s) => ({ followPlayhead: !s.followPlayhead })),
   setInstrument: (instrumentId) => set({ instrumentId, instrumentError: null }),
   setInstrumentStatus: (instrumentLoading, instrumentError = null) =>
@@ -534,6 +584,79 @@ export const useProjectStore = create<ProjectState>((set, get) => {
 
   setPianoRollOpen: (pianoRollOpen) => set({ pianoRollOpen }),
 
+  copyBlock: (id) => {
+    const block = get().blocks.find((b) => b.id === id);
+    if (!block) return;
+    set({
+      clipboard: {
+        kind: 'block',
+        length: block.length,
+        notes: block.notes.map(({ midi, start, length, velocity }) => ({
+          midi,
+          start,
+          length,
+          velocity,
+        })),
+      },
+    });
+  },
+
+  pasteBlockAt: (step) => {
+    const state = get();
+    const clip = state.clipboard;
+    if (!clip || clip.kind !== 'block') return null;
+
+    get().beginTransaction();
+    const limit = totalSteps(state.timeSignature, state.bars);
+    const desired = clamp(
+      snapStep(step, state.quantize, state.snap),
+      0,
+      Math.max(0, limit - 1),
+    );
+    const start = placeBlock(state.blocks, '', desired, clip.length, limit);
+    if (start === null) {
+      get().endTransaction();
+      return null;
+    }
+    const block: ChordBlockItem = {
+      id: nextId('blk'),
+      start,
+      length: clip.length,
+      notes: clip.notes.map((n) => ({ ...n, id: nextId('note') })),
+    };
+    set({
+      blocks: [...state.blocks, block].sort((a, b) => a.start - b.start),
+      selectedBlockId: block.id,
+      selectedNoteIds: [],
+      selectedSegmentStart: null,
+      pianoRollOpen: true,
+    });
+    get().endTransaction();
+    return block.id;
+  },
+
+  duplicateBlock: (id) => {
+    const state = get();
+    const block = state.blocks.find((b) => b.id === id);
+    if (!block) return null;
+    const limit = totalSteps(state.timeSignature, state.bars);
+    const start = placeBlock(state.blocks, '', block.start, block.length, limit);
+    if (start === null) return null;
+    const copy: ChordBlockItem = {
+      id: nextId('blk'),
+      start,
+      length: block.length,
+      notes: block.notes.map((n) => ({ ...n, id: nextId('note') })),
+    };
+    set({
+      blocks: [...state.blocks, copy].sort((a, b) => a.start - b.start),
+      selectedBlockId: copy.id,
+      selectedNoteIds: [],
+      selectedSegmentStart: null,
+    });
+    return copy.id;
+  },
+
   /* --- ノート --- */
   addNote: (blockId, midi, start, length) => {
     const state = get();
@@ -651,6 +774,82 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       selectedNoteIds: state.blocks.find((b) => b.id === blockId)?.notes.map((n) => n.id) ?? [],
     })),
 
+  copySelectedNotes: () => {
+    const state = get();
+    const selected = new Set(state.selectedNoteIds);
+    if (selected.size === 0) return;
+
+    const entries: Array<{ absStart: number; midi: number; length: number; velocity: number }> = [];
+    for (const b of state.blocks) {
+      for (const n of b.notes) {
+        if (selected.has(n.id)) {
+          entries.push({ absStart: b.start + n.start, midi: n.midi, length: n.length, velocity: n.velocity });
+        }
+      }
+    }
+    if (entries.length === 0) return;
+
+    const anchor = Math.min(...entries.map((e) => e.absStart));
+    set({
+      clipboard: {
+        kind: 'notes',
+        entries: entries.map((e) => ({
+          offset: e.absStart - anchor,
+          midi: e.midi,
+          length: e.length,
+          velocity: e.velocity,
+        })),
+      },
+    });
+  },
+
+  /**
+   * コピーしたノートを、一番左のものが指定 step に来るように貼り付ける。
+   * 貼り付け先はブロックを問わない — 各ノートは自分の絶対位置を覆う
+   * ブロックへ、無ければ最寄りのブロックへ属する（resolveNoteTarget 参照）。
+   */
+  pasteNotesAt: (step) => {
+    const state = get();
+    const clip = state.clipboard;
+    if (!clip || clip.kind !== 'notes') return;
+
+    get().beginTransaction();
+    const anchorStep = Math.round(step);
+    const additions = new Map<string, NoteItem[]>();
+    const newIds: string[] = [];
+
+    for (const entry of clip.entries) {
+      const absStart = anchorStep + entry.offset;
+      const target = resolveNoteTarget(state.blocks, absStart);
+      if (!target) continue;
+      const relStart = clamp(absStart - target.start, 0, Math.max(0, target.length - 1));
+      const relLength = clamp(entry.length, 1, target.length - relStart);
+      const note: NoteItem = {
+        id: nextId('note'),
+        midi: clamp(entry.midi, PITCH_MIN, PITCH_MAX),
+        start: relStart,
+        length: relLength,
+        velocity: entry.velocity,
+      };
+      newIds.push(note.id);
+      additions.set(target.id, [...(additions.get(target.id) ?? []), note]);
+    }
+
+    if (newIds.length === 0) {
+      get().endTransaction();
+      return;
+    }
+
+    set({
+      blocks: state.blocks.map((b) => {
+        const add = additions.get(b.id);
+        return add ? { ...b, notes: [...b.notes, ...add] } : b;
+      }),
+      selectedNoteIds: newIds,
+    });
+    get().endTransaction();
+  },
+
   duplicateSelectedNotes: () => {
     const state = get();
     const selected = new Set(state.selectedNoteIds);
@@ -679,33 +878,65 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     return clones;
   },
 
+  /**
+   * ノートは元のブロックの中に留まらず、移動先の絶対位置を覆う
+   * どのブロックへでも跨いで移動できる（同じ小節縛りをここで外している）。
+   * 移動量そのものはプロジェクト全体の範囲でのみクランプし、
+   * 実際にどのブロックへ属するかは着地点ごとに resolveNoteTarget で解決する。
+   */
   applyNoteDrag: (snapshots, dStep, dMidi) =>
     set((state) => {
       if (snapshots.length === 0) return {};
-      const lengthOf = (blockId: string) =>
-        state.blocks.find((b) => b.id === blockId)?.length ?? 0;
+      const limit = totalSteps(state.timeSignature, state.bars);
+      const blocksById = new Map(state.blocks.map((b) => [b.id, b]));
+      const absStartOf = (s: NoteDragSnapshot) => (blocksById.get(s.blockId)?.start ?? 0) + s.start;
 
-      const step = commonDelta(snapshots, lengthOf, dStep, (s, blockLength) => [
-        -s.start,
-        Math.max(-s.start, blockLength - s.length - s.start),
-      ]);
-      const midi = commonDelta(snapshots, lengthOf, dMidi, (s) => [
+      const step = commonDelta(snapshots, () => 0, dStep, (s) => {
+        const abs = absStartOf(s);
+        return [-abs, limit - s.length - abs];
+      });
+      const midi = commonDelta(snapshots, () => 0, dMidi, (s) => [
         PITCH_MIN - s.midi,
         PITCH_MAX - s.midi,
       ]);
 
-      const byId = new Map(snapshots.map((s) => [s.noteId, s]));
+      // 元のノート実体（velocity 等）を集めておく
+      const originals = new Map<string, NoteItem>();
+      const movingIds = new Set(snapshots.map((s) => s.noteId));
+      for (const b of state.blocks) {
+        for (const n of b.notes) {
+          if (movingIds.has(n.id)) originals.set(n.id, n);
+        }
+      }
+
+      const relocated = new Set<string>();
+      const additions = new Map<string, NoteItem[]>();
+
+      for (const s of snapshots) {
+        const original = originals.get(s.noteId);
+        if (!original) continue;
+        const absStart = absStartOf(s) + step;
+        const target = resolveNoteTarget(state.blocks, absStart);
+        if (!target) continue; // 属せるブロックが無ければその場に残す
+
+        relocated.add(s.noteId);
+        const relStart = clamp(Math.round(absStart) - target.start, 0, Math.max(0, target.length - 1));
+        const relLength = clamp(s.length, 1, target.length - relStart);
+        const note: NoteItem = {
+          ...original,
+          midi: clamp(s.midi + midi, PITCH_MIN, PITCH_MAX),
+          start: relStart,
+          length: relLength,
+        };
+        additions.set(target.id, [...(additions.get(target.id) ?? []), note]);
+      }
+
       return {
         blocks: state.blocks.map((b) => {
-          if (!b.notes.some((n) => byId.has(n.id))) return b;
-          return {
-            ...b,
-            notes: b.notes.map((n) => {
-              const snap = byId.get(n.id);
-              if (!snap) return n;
-              return { ...n, start: snap.start + step, midi: snap.midi + midi };
-            }),
-          };
+          const kept = b.notes.filter((n) => !relocated.has(n.id));
+          const add = additions.get(b.id);
+          if (!add && kept.length === b.notes.length) return b;
+          return { ...b, notes: add ? [...kept, ...add] : kept };
         }),
       };
     }),
@@ -744,6 +975,30 @@ export const useProjectStore = create<ProjectState>((set, get) => {
         selectedBlockId: null,
         selectedNoteIds: [],
         selectedSegmentStart: null,
+      }),
+    ),
+
+  /**
+   * ファイルから読み込んだ内容を丸ごと反映する。
+   * ブロック / 小節数 / 拍子は Undo 対象（誤って読み込んでも Ctrl+Z で戻せる）。
+   * それ以外の設定は他のセッターと同様に Undo 対象外。
+   */
+  loadProject: (file) =>
+    transact(() =>
+      set({
+        blocks: file.blocks,
+        bars: file.bars,
+        timeSignature: file.timeSignature,
+        bpm: file.bpm,
+        chordResolution: file.chordResolution,
+        quantize: file.quantize,
+        snap: file.snap,
+        instrumentId: file.instrumentId,
+        volumeDb: file.volumeDb,
+        selectedBlockId: null,
+        selectedNoteIds: [],
+        selectedSegmentStart: null,
+        clipboard: null,
       }),
     ),
 

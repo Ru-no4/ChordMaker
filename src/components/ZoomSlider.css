@@ -1,0 +1,147 @@
+.zoom-slider {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.zoom-slider__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.zoom-slider__btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.zoom-slider__btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.zoom-slider__track {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.zoom-slider__range {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  margin: 0;
+}
+
+.zoom-slider__range::-webkit-slider-runnable-track {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+.zoom-slider__range::-moz-range-track {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+.zoom-slider__range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  background: linear-gradient(180deg, #d6dbe2 0%, #9aa3ae 100%);
+  border: 1px solid #1b1f24;
+  cursor: pointer;
+}
+
+.zoom-slider__range::-moz-range-thumb {
+  background: linear-gradient(180deg, #d6dbe2 0%, #9aa3ae 100%);
+  border: 1px solid #1b1f24;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+/* ---- 横向き（コードトラック共通） ---- */
+.zoom-slider--horizontal .zoom-slider__track {
+  width: 74px;
+  height: 12px;
+}
+
+.zoom-slider--horizontal .zoom-slider__range {
+  width: 74px;
+  height: 12px;
+}
+
+.zoom-slider--horizontal .zoom-slider__range::-webkit-slider-runnable-track {
+  height: 4px;
+}
+
+.zoom-slider--horizontal .zoom-slider__range::-webkit-slider-thumb {
+  width: 8px;
+  height: 12px;
+  border-radius: 2px;
+  margin-top: -4px;
+}
+
+.zoom-slider--horizontal .zoom-slider__range::-moz-range-thumb {
+  width: 8px;
+  height: 12px;
+}
+
+/*
+ * 縦向きスライダー。input[type=range] のネイティブ縦対応はブラウザ間で
+ * 実装がまちまちなので、横向きの range を回転させる定番の手法を使う。
+ * ラップする .zoom-slider__track に見た目上の縦サイズを持たせ、
+ * 中身は回転前の横サイズのまま絶対配置で中央に置く。
+ */
+.zoom-slider--vertical {
+  flex-direction: column;
+}
+
+.zoom-slider--vertical .zoom-slider__track {
+  position: relative;
+  width: 12px;
+  height: 74px;
+}
+
+.zoom-slider--vertical .zoom-slider__range {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 74px;
+  height: 12px;
+  transform: translate(-50%, -50%) rotate(-90deg);
+}
+
+.zoom-slider--vertical .zoom-slider__range::-webkit-slider-runnable-track {
+  height: 4px;
+}
+
+.zoom-slider--vertical .zoom-slider__range::-webkit-slider-thumb {
+  width: 8px;
+  height: 12px;
+  border-radius: 2px;
+  margin-top: -4px;
+}
+
+.zoom-slider--vertical .zoom-slider__range::-moz-range-thumb {
+  width: 8px;
+  height: 12px;
+}
+
+@media (hover: none) {
+  .zoom-slider__btn {
+    width: 22px;
+    height: 22px;
+  }
+}

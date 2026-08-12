@@ -1,0 +1,17 @@
+.pf-controls__input {
+  /* input[type=file] はボタン経由でしか開かせない */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pf-controls__error {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--playhead);
+  white-space: nowrap;
+  cursor: default;
+}
