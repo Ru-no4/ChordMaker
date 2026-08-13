@@ -83,6 +83,14 @@ export const strings = {
     zoomAria: { ja: 'コードトラックの横幅表示倍率', en: 'Chord track horizontal zoom' },
   },
 
+  /** コードトラック・ピアノロールの両方で使う、端の余白と小節追加ボタン */
+  timelineEdge: {
+    addBarAtStartTitle: { ja: '先頭に小節を1つ追加', en: 'Add one bar at the start' },
+    addBarAtStartAria: { ja: '先頭に小節を1つ追加', en: 'Add one bar at the start' },
+    addBarAtEndTitle: { ja: '末尾に小節を1つ追加', en: 'Add one bar at the end' },
+    addBarAtEndAria: { ja: '末尾に小節を1つ追加', en: 'Add one bar at the end' },
+  },
+
   chordBlock: {
     resizeLeftAria: { ja: '長さ変更（左）', en: 'Resize (left)' },
     resizeRightAria: { ja: '長さ変更（右）', en: 'Resize (right)' },

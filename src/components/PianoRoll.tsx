@@ -10,6 +10,7 @@ import {
   beatWidth,
   chordResolutionSteps,
   displayBars,
+  edgeMarginSteps,
   stepWidth,
   stepsPerBar,
   totalSteps,
@@ -60,9 +61,12 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
 
   const stepW = stepWidth(timeSignature, zoomX);
   const barW = stepsPerBar(timeSignature) * stepW;
+  // タイムラインと同じ考え方: 先頭・末尾に余白を確保し、そこに小節追加ボタンを置く
+  const marginPx = edgeMarginSteps(timeSignature) * stepW;
   // コードトラックと同じ考え方: bars を超えて置かれた内容があれば表示幅を伸ばす
   const shownBars = displayBars(timeSignature, bars, blocks);
-  const laneWidth = totalSteps(timeSignature, shownBars) * stepW;
+  const contentWidth = totalSteps(timeSignature, shownBars) * stepW;
+  const laneWidth = contentWidth + marginPx * 2;
   const rowH = rowHeight(zoomY);
   const height = gridHeight(zoomY);
 
@@ -81,6 +85,7 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
     scrollRef: ref,
     stepW,
     zoomY,
+    marginPx,
     onPreview,
   });
 
@@ -100,8 +105,9 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
         `repeating-linear-gradient(90deg, var(--grid-beat) 0 1px, transparent 1px ${beatWidth(zoomX)}px)`,
         `repeating-linear-gradient(90deg, var(--grid-32) 0 1px, transparent 1px ${stepW}px)`,
       ].join(','),
+      backgroundPosition: `${marginPx}px 0`,
     }),
-    [barW, stepW, zoomX],
+    [barW, marginPx, stepW, zoomX],
   );
 
   // 初回展開時に C3 が中央に来るようにする
@@ -214,45 +220,55 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
                 ))}
               </div>
 
-              {/* ブロック範囲。選択中は明るく、他はグレー */}
-              {blocks.map((b) => (
-                <div
-                  key={b.id}
-                  className={`pr-region ${b.id === selectedBlockId ? 'is-active' : ''}`}
-                  style={{ left: b.start * stepW, width: b.length * stepW }}
-                />
-              ))}
+              {/* 先頭・末尾の余白。非選択エリアよりさらに暗くする */}
+              <div className="timeline-margin-shade" style={{ left: 0, width: marginPx }} />
+              <div
+                className="timeline-margin-shade"
+                style={{ left: marginPx + contentWidth, width: marginPx }}
+              />
 
-              {/* 選択ブロック内のコードの切れ目。上のコードトラックと位置が揃う */}
-              {selected &&
-                segments.slice(1).map((seg) => (
+              {/* 先頭の余白ぶん、ブロック範囲・区切り・ノートをまとめて右へずらす */}
+              <div className="pr-content" style={{ left: marginPx }}>
+                {/* ブロック範囲。選択中は明るく、他はグレー */}
+                {blocks.map((b) => (
                   <div
-                    key={seg.start}
-                    className="pr-seg-divider"
-                    style={{ left: (selected.start + seg.start) * stepW }}
+                    key={b.id}
+                    className={`pr-region ${b.id === selectedBlockId ? 'is-active' : ''}`}
+                    style={{ left: b.start * stepW, width: b.length * stepW }}
                   />
                 ))}
 
-              {/*
-                ノートはブロックを跨いで編集できる。
-                選択中ブロック以外は控えめに描くが、選択・移動・削除は同じように行える。
-              */}
-              {blocks.flatMap((b) => {
-                const segs = segmentsFor(b, resolutionSteps);
-                return b.notes.map((n) => (
-                  <Note
-                    key={n.id}
-                    note={n}
-                    blockStart={b.start}
-                    stepW={stepW}
-                    zoomY={zoomY}
-                    style={styleFor(segmentAt(segs, n.start)?.detection.chord?.category ?? null)}
-                    selected={selectedSet.has(n.id)}
-                    erasing={eraseSet.has(n.id)}
-                    dimmed={b.id !== selectedBlockId}
-                  />
-                ));
-              })}
+                {/* 選択ブロック内のコードの切れ目。上のコードトラックと位置が揃う */}
+                {selected &&
+                  segments.slice(1).map((seg) => (
+                    <div
+                      key={seg.start}
+                      className="pr-seg-divider"
+                      style={{ left: (selected.start + seg.start) * stepW }}
+                    />
+                  ))}
+
+                {/*
+                  ノートはブロックを跨いで編集できる。
+                  選択中ブロック以外は控えめに描くが、選択・移動・削除は同じように行える。
+                */}
+                {blocks.flatMap((b) => {
+                  const segs = segmentsFor(b, resolutionSteps);
+                  return b.notes.map((n) => (
+                    <Note
+                      key={n.id}
+                      note={n}
+                      blockStart={b.start}
+                      stepW={stepW}
+                      zoomY={zoomY}
+                      style={styleFor(segmentAt(segs, n.start)?.detection.chord?.category ?? null)}
+                      selected={selectedSet.has(n.id)}
+                      erasing={eraseSet.has(n.id)}
+                      dimmed={b.id !== selectedBlockId}
+                    />
+                  ));
+                })}
+              </div>
 
               {marquee && (
                 <div
@@ -266,7 +282,7 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
                 />
               )}
 
-              <Playhead stepW={stepW} variant="roll" />
+              <Playhead stepW={stepW} offset={marginPx} variant="roll" />
             </div>
           </div>
         </div>

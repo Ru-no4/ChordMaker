@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react';
 import { useProjectStore } from '../store/useProjectStore';
+import { usePlayheadStore } from '../store/usePlayheadStore';
 import {
   STEPS_PER_WHOLE,
   ZOOM_FACTOR,
@@ -8,6 +9,7 @@ import {
   ZOOM_X_MIN,
   beatWidth,
   displayBars,
+  edgeMarginSteps,
   laneHeight,
   stepWidth,
   stepsPerBar,
@@ -42,6 +44,7 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
   const setBars = useProjectStore((s) => s.setBars);
   const rangeStart = useProjectStore((s) => s.rangeStart);
   const setRangeStart = useProjectStore((s) => s.setRangeStart);
+  const addBarAtStart = useProjectStore((s) => s.addBarAtStart);
   const beginTransaction = useProjectStore((s) => s.beginTransaction);
   const endTransaction = useProjectStore((s) => s.endTransaction);
   const selectedBlockId = useProjectStore((s) => s.selectedBlockId);
@@ -57,6 +60,7 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
   const setZoomX = useProjectStore((s) => s.setZoomX);
   const { t } = useT();
   const ct = strings.chordTimeline;
+  const te = strings.timelineEdge;
 
   const { ref, onScroll } = useSyncedScroll<HTMLDivElement>();
   const panRef = useRef<{ originX: number; scrollLeft: number } | null>(null);
@@ -69,21 +73,30 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
   const barW = stepsPerBar(timeSignature) * stepW;
   // 再生範囲スライダーは小節単位ではなく、小節内を四分音符単位で動かせるようにする
   const rangeSnapBars = (STEPS_PER_WHOLE / 4) / stepsPerBar(timeSignature);
+  // 先頭・末尾に確保する余白（スクロールを端まで持っていくと見える。ここに小節追加ボタンを置く）
+  const marginPx = edgeMarginSteps(timeSignature) * stepW;
   // 開始位置が終了位置以降まで来てしまっている（入れ替わっている）間は無効な範囲として扱う
   const rangeValid = rangeStart < bars;
-  const rangeBandLeft = Math.min(rangeStart, bars) * barW;
+  const rangeBandLeft = Math.min(rangeStart, bars) * barW + marginPx;
   const rangeBandWidth = Math.abs(bars - rangeStart) * barW;
-  const rangeStartHandleLeft = rangeStart * barW;
-  const rangeEndHandleLeft = bars * barW - RANGE_HANDLE_WIDTH;
+  const rangeStartHandleLeft = rangeStart * barW + marginPx;
+  const rangeEndHandleLeft = bars * barW + marginPx - RANGE_HANDLE_WIDTH;
+  const handleAddBarStart = () => {
+    addBarAtStart();
+    const playhead = usePlayheadStore.getState();
+    playhead.setStep(playhead.step + stepsPerBar(timeSignature));
+  };
+  const handleAddBarEnd = () => setBars(bars + 1);
   // 表示上の小節数。bars を超えて置かれた内容があれば、そこまで表示を伸ばす
   const shownBars = displayBars(timeSignature, bars, blocks);
   const total = totalSteps(timeSignature, shownBars);
-  const laneWidth = total * stepW;
+  const contentWidth = total * stepW;
+  const laneWidth = contentWidth + marginPx * 2;
   const laneH = laneHeight(zoomY);
   const beatsPerBar = timeSignature.numerator;
 
   // 再生ヘッドを中央に保つ。横スクロールは scrollSync でピアノロールにも伝わる。
-  usePlayheadFollow(ref, stepW, GUTTER_WIDTH);
+  usePlayheadFollow(ref, stepW, GUTTER_WIDTH, marginPx);
 
   const gridStyle = useMemo(
     () => ({
@@ -92,8 +105,10 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
         `repeating-linear-gradient(90deg, var(--grid-beat) 0 1px, transparent 1px ${beatWidth(zoomX)}px)`,
         `repeating-linear-gradient(90deg, var(--grid-32) 0 1px, transparent 1px ${stepW}px)`,
       ].join(','),
+      // 先頭の余白ぶん、格子模様の起点を右へずらして中身の step 0 と揃える
+      backgroundPosition: `${marginPx}px 0`,
     }),
-    [barW, stepW, zoomX],
+    [barW, marginPx, stepW, zoomX],
   );
 
   /* --- レーン背景 --- */
@@ -113,7 +128,7 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
       if (editorTool === 'draw') {
         // 鉛筆はタップでブロック追加
         const rect = e.currentTarget.getBoundingClientRect();
-        addBlockAt((e.clientX - rect.left) / stepW);
+        addBlockAt((e.clientX - rect.left - marginPx) / stepW);
         return;
       }
 
@@ -133,7 +148,7 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
 
       selectBlock(null);
     },
-    [addBlockAt, editorTool, selectBlock, selectedBlockIds, stepW],
+    [addBlockAt, editorTool, marginPx, selectBlock, selectedBlockIds, stepW],
   );
 
   const onLanePointerMove = useCallback(
@@ -152,14 +167,14 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
       const width = Math.abs(x - mq.originX);
       setMarquee({ left, width });
 
-      const hitStart = left / stepW;
-      const hitEnd = (left + width) / stepW;
+      const hitStart = (left - marginPx) / stepW;
+      const hitEnd = (left + width - marginPx) / stepW;
       const ids = blocks
         .filter((b) => b.start < hitEnd && b.start + b.length > hitStart)
         .map((b) => b.id);
       selectBlocks(mq.additive ? [...mq.base, ...ids] : ids);
     },
-    [blocks, ref, selectBlocks, stepW],
+    [blocks, marginPx, ref, selectBlocks, stepW],
   );
 
   const onLanePointerUp = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
@@ -179,9 +194,9 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
       const el = rulerRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      onSeek(Math.max(0, Math.min(total, (clientX - rect.left) / stepW)));
+      onSeek(Math.max(0, Math.min(total, (clientX - rect.left - marginPx) / stepW)));
     },
-    [onSeek, stepW, total],
+    [marginPx, onSeek, stepW, total],
   );
 
   // 端まで持っていったら自動でスクロールし、その分も位置に反映する
@@ -326,6 +341,7 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
               onPointerCancel={onRulerPointerUp}
               onLostPointerCapture={onRulerPointerUp}
             >
+              <div className="ruler__margin" style={{ width: marginPx }} />
               {Array.from({ length: shownBars }, (_, i) => (
                 <div
                   key={i}
@@ -342,6 +358,7 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
                   ))}
                 </div>
               ))}
+              <div className="ruler__margin" style={{ width: marginPx }} />
 
               {/*
                 ---- 再生範囲（rangeStart 〜 bars）。両端をドラッグして変更できる。
@@ -396,15 +413,24 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
               onPointerCancel={onLanePointerUp}
               onLostPointerCapture={onLanePointerUp}
             >
-              {blocks.map((block) => (
-                <ChordBlock
-                  key={block.id}
-                  block={block}
-                  stepW={stepW}
-                  zoomY={zoomY}
-                  selected={block.id === selectedBlockId || selectedBlockIds.includes(block.id)}
-                />
-              ))}
+              {/* 先頭・末尾の余白。非選択エリアよりさらに暗くする */}
+              <div className="timeline-margin-shade" style={{ left: 0, width: marginPx }} />
+              <div
+                className="timeline-margin-shade"
+                style={{ left: marginPx + contentWidth, width: marginPx }}
+              />
+
+              <div className="chord-lane__content" style={{ left: marginPx }}>
+                {blocks.map((block) => (
+                  <ChordBlock
+                    key={block.id}
+                    block={block}
+                    stepW={stepW}
+                    zoomY={zoomY}
+                    selected={block.id === selectedBlockId || selectedBlockIds.includes(block.id)}
+                  />
+                ))}
+              </div>
 
               {marquee && (
                 <div
@@ -412,11 +438,32 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
                   style={{ left: marquee.left, width: marquee.width }}
                 />
               )}
+
+              <button
+                type="button"
+                className="timeline-add-bar timeline-add-bar--start"
+                style={{ left: marginPx / 2 }}
+                onClick={handleAddBarStart}
+                title={t(te.addBarAtStartTitle)}
+                aria-label={t(te.addBarAtStartAria)}
+              >
+                +
+              </button>
+              <button
+                type="button"
+                className="timeline-add-bar timeline-add-bar--end"
+                style={{ left: marginPx + contentWidth + marginPx / 2 }}
+                onClick={handleAddBarEnd}
+                title={t(te.addBarAtEndTitle)}
+                aria-label={t(te.addBarAtEndAria)}
+              >
+                +
+              </button>
             </div>
           </div>
 
           {/* ---- 再生ヘッド（ルーラー＋レーンを貫通） ---- */}
-          <Playhead stepW={stepW} offset={GUTTER_WIDTH} variant="timeline" />
+          <Playhead stepW={stepW} offset={GUTTER_WIDTH + marginPx} variant="timeline" />
         </div>
       </div>
 

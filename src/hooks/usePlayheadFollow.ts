@@ -19,6 +19,8 @@ export function usePlayheadFollow(
   scrollRef: RefObject<HTMLElement | null>,
   stepW: number,
   gutterWidth: number,
+  /** 先頭に確保している余白ぶん、実際の描画位置は step * stepW より右にずれている */
+  marginPx = 0,
 ) {
   const isPlaying = useProjectStore((s) => s.isPlaying);
   const follow = useProjectStore((s) => s.followPlayhead);
@@ -32,10 +34,10 @@ export function usePlayheadFollow(
       if (laneViewport <= 0) return;
 
       const maxScroll = el.scrollWidth - el.clientWidth;
-      const desired = followScrollLeft(step * stepW, laneViewport, maxScroll);
+      const desired = followScrollLeft(step * stepW + marginPx, laneViewport, maxScroll);
       if (Math.abs(el.scrollLeft - desired) >= 1) el.scrollLeft = desired;
     },
-    [gutterWidth, scrollRef, stepW],
+    [gutterWidth, marginPx, scrollRef, stepW],
   );
 
   useEffect(() => {

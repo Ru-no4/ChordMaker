@@ -306,6 +306,12 @@
   border-bottom-color: rgba(0, 0, 0, 0.55);
 }
 
+/* 先頭の余白ぶん、ブロック範囲・区切り・ノートをまとめて右へずらすラッパー */
+.pr-content {
+  position: absolute;
+  inset: 0;
+}
+
 /* ---- ブロック範囲 ---- */
 .pr-region {
   position: absolute;

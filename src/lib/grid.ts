@@ -58,6 +58,13 @@ export const laneHeight = (zoomY: number): number => BASE_LANE_HEIGHT * zoomY;
 export const totalSteps = (sig: TimeSignature, bars: number): number =>
   stepsPerBar(sig) * bars;
 
+/**
+ * タイムライン（コードトラック・ピアノロール共通）の先頭・末尾に確保する余白。
+ * スクロールを端まで持っていくと、この余白の中に小節追加ボタンが見える。
+ * 拍子によらず「1拍分（濃いメモリ1つ分）」で揃える。
+ */
+export const edgeMarginSteps = (sig: TimeSignature): number => stepsPerBeat(sig);
+
 /** 配置されているブロックが実際に占めている末尾の step（無ければ 0） */
 export function contentExtentSteps(blocks: Array<{ start: number; length: number }>): number {
   return blocks.reduce((max, b) => Math.max(max, b.start + b.length), 0);

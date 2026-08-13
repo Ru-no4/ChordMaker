@@ -85,6 +85,8 @@ interface Params {
   scrollRef: RefObject<HTMLDivElement | null>;
   stepW: number;
   zoomY: number;
+  /** グリッド先頭に確保している余白（px）。絶対 step へ変換する際に差し引く */
+  marginPx: number;
   onPreview: (midi: number) => void;
 }
 
@@ -128,6 +130,7 @@ export function usePianoRollGesture({
   scrollRef,
   stepW,
   zoomY,
+  marginPx,
   onPreview,
 }: Params) {
   const gestureRef = useRef<Gesture | null>(null);
@@ -191,8 +194,8 @@ export function usePianoRollGesture({
       };
       setMarquee(rect);
 
-      const hitStart = rect.left / stepW;
-      const hitEnd = (rect.left + rect.width) / stepW;
+      const hitStart = (rect.left - marginPx) / stepW;
+      const hitEnd = (rect.left + rect.width - marginPx) / stepW;
       const midiA = midiFromY(rect.top, zoomY);
       const midiB = midiFromY(rect.top + rect.height, zoomY);
       const loMidi = Math.min(midiA, midiB);
@@ -230,7 +233,7 @@ export function usePianoRollGesture({
       for (let i = 1; i <= samples; i++) {
         const px = g.lastX + (dx * i) / samples;
         const py = g.lastY + (dy * i) / samples;
-        const hit = noteAtPoint(store.blocks, px / stepW, midiFromY(py, zoomY));
+        const hit = noteAtPoint(store.blocks, (px - marginPx) / stepW, midiFromY(py, zoomY));
         if (hit && !g.hot.has(hit.id)) {
           g.hot.add(hit.id);
           added = true;
@@ -279,7 +282,7 @@ export function usePianoRollGesture({
       g.lastMidi = midi;
       onPreview(midi);
     }
-  }, [localPoint, onPreview, scrollRef, stepW, zoomY]);
+  }, [localPoint, marginPx, onPreview, scrollRef, stepW, zoomY]);
 
   const autoScroll = useEdgeAutoScroll(scrollRef, {
     vertical: true,
@@ -494,7 +497,7 @@ export function usePianoRollGesture({
 
       if (editorTool === 'draw') {
         // どのブロックの上でも置ける。置いた先のブロックを選択状態にする。
-        const absStep = x / stepW;
+        const absStep = (x - marginPx) / stepW;
         const targetBlock = blockAt(blocks, absStep);
         if (!targetBlock) {
           store.clearNoteSelection();
@@ -537,6 +540,7 @@ export function usePianoRollGesture({
       beginPan,
       gridRef,
       localPoint,
+      marginPx,
       onPreview,
       scrollRef,
       snapshotSelection,
@@ -632,12 +636,12 @@ export function usePianoRollGesture({
     (e: ReactMouseEvent<HTMLDivElement>): boolean => {
       const { x, y } = localPoint(e.clientX, e.clientY);
       const store = useProjectStore.getState();
-      const hit = noteAtPoint(store.blocks, x / stepW, midiFromY(y, zoomY));
+      const hit = noteAtPoint(store.blocks, (x - marginPx) / stepW, midiFromY(y, zoomY));
       if (!hit) return false;
       store.removeNotes([hit.id]);
       return true;
     },
-    [localPoint, stepW, zoomY],
+    [localPoint, marginPx, stepW, zoomY],
   );
 
   const onDoubleClick = useCallback(

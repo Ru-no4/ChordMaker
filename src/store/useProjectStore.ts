@@ -227,6 +227,8 @@ interface ProjectState {
   setTimeSignature: (sig: TimeSignature) => void;
   setBars: (bars: number) => void;
   setRangeStart: (bar: number) => void;
+  /** 先頭に1小節挿入し、既存の内容をすべて後ろへずらす */
+  addBarAtStart: () => void;
   toggleLoop: () => void;
   setQuantize: (q: QuantizeValue) => void;
   toggleSnap: () => void;
@@ -490,6 +492,20 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     const snapped = Math.round(bar / perStep) * perStep;
     transact(() => set({ rangeStart: clamp(snapped, 0, BARS_MAX) }));
   },
+
+  // 先頭に1小節ぶんの空きを作る。既存のブロック（＝中のノートも一緒に）を
+  // すべて後ろへずらし、小節数と再生範囲の開始位置も1小節分あわせて増やす。
+  // 座標がマイナスになることは無いので、小節番号は常に1始まりのまま保てる。
+  addBarAtStart: () =>
+    transact(() => {
+      const state = get();
+      const shift = stepsPerBar(state.timeSignature);
+      set({
+        blocks: state.blocks.map((b) => ({ ...b, start: b.start + shift })),
+        bars: clamp(state.bars + 1, 1, BARS_MAX),
+        rangeStart: clamp(state.rangeStart + 1, 0, BARS_MAX),
+      });
+    }),
 
   toggleLoop: () => set((s) => ({ loop: !s.loop })),
   setQuantize: (quantize) => set({ quantize }),

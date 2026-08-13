@@ -84,6 +84,12 @@
   box-sizing: border-box;
 }
 
+/* 先頭・末尾の余白ぶん。小節セルではないので罫線は付けず、is-overflow より暗くする */
+.ruler__margin {
+  flex: 0 0 auto;
+  background: rgba(0, 0, 0, 0.32);
+}
+
 .ruler__num {
   position: absolute;
   left: 5px;
@@ -197,6 +203,25 @@
   cursor: crosshair;
 }
 
+/* 先頭の余白ぶん、コードブロック一式をまとめて右へずらすラッパー */
+.chord-lane__content {
+  position: absolute;
+  inset: 0;
+}
+
+/*
+ * 先頭・末尾の余白帯（コードトラック・ピアノロール共通）。
+ * is-overflow の小節よりさらに暗くし、本編の内容と明確に区別する。
+ */
+.timeline-margin-shade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.32);
+  pointer-events: none;
+  z-index: 1;
+}
+
 /* ---- 複数ブロックの矩形選択 ---- */
 .chord-lane__marquee {
   position: absolute;
@@ -206,6 +231,34 @@
   background: rgba(79, 140, 255, 0.14);
   pointer-events: none;
   z-index: 6;
+}
+
+/*
+ * 先頭・末尾の余白（EDGE_MARGIN_BAR_FRACTION 分）に置く「小節を追加」ボタン。
+ * コードトラック・ピアノロールの両方で使う共通クラス。
+ */
+.timeline-add-bar {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 7;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.timeline-add-bar:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-panel);
 }
 
 /* ---- コードブロック（高さ60px） ---- */
