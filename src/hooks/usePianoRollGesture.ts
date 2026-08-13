@@ -59,6 +59,8 @@ type Gesture =
       kind: 'resize';
       snapshots: NoteDragSnapshot[];
       anchor: NoteDragSnapshot;
+      /** どちら側の端をつまんでいるか。左端は start と length を逆方向に、右端は length だけを変える */
+      handle: 'left' | 'right';
     })
   | {
       kind: 'marquee';
@@ -252,6 +254,13 @@ export function usePianoRollGesture({
     if (!g.moved) return;
 
     if (g.kind === 'resize') {
+      if (g.handle === 'left') {
+        // 左端は「末尾を固定して start を動かす」。長さの吸着は動いた分そのままに掛ける。
+        const wantedStart = g.anchor.start + dx / stepW;
+        const snappedStart = snapStep(wantedStart, quantize, snap);
+        store.applyNoteResizeLeft(g.snapshots, snappedStart - g.anchor.start);
+        return;
+      }
       const wanted = g.anchor.length + dx / stepW;
       const snapped = snapLength(wanted, quantize, snap);
       store.applyNoteResize(g.snapshots, snapped - g.anchor.length);
@@ -291,7 +300,8 @@ export function usePianoRollGesture({
         store.applyNoteDrag(g.snapshots, 0, 0);
         break;
       case 'resize':
-        store.applyNoteResize(g.snapshots, 0);
+        if (g.handle === 'left') store.applyNoteResizeLeft(g.snapshots, 0);
+        else store.applyNoteResize(g.snapshots, 0);
         break;
       case 'marquee':
         store.selectNotes(g.base);
@@ -384,7 +394,8 @@ export function usePianoRollGesture({
       const target = e.target as HTMLElement;
       const noteEl = target.closest<HTMLElement>('[data-note-id]');
       const noteId = noteEl?.dataset.noteId ?? null;
-      const onHandle = !!target.closest('[data-note-handle]');
+      const handleEl = target.closest<HTMLElement>('[data-note-handle]');
+      const handleSide = handleEl?.dataset.noteHandle as 'left' | 'right' | undefined;
 
       /* --- パン（手ツール / 中ボタン） --- */
       if (editorTool === 'pan' || e.button === 1) {
@@ -453,8 +464,8 @@ export function usePianoRollGesture({
           return;
         }
 
-        gestureRef.current = onHandle
-          ? { ...origin, kind: 'resize', snapshots, anchor }
+        gestureRef.current = handleSide
+          ? { ...origin, kind: 'resize', snapshots, anchor, handle: handleSide }
           : {
               ...origin,
               kind: 'move',
@@ -515,7 +526,7 @@ export function usePianoRollGesture({
           length: created.note.length,
           midi: created.note.midi,
         };
-        gestureRef.current = { ...origin, kind: 'resize', snapshots: [anchor], anchor };
+        gestureRef.current = { ...origin, kind: 'resize', snapshots: [anchor], anchor, handle: 'right' };
         return;
       }
 

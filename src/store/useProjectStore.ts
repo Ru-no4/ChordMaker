@@ -113,7 +113,7 @@ function seedBlocks(): ChordBlockItem[] {
     makeBlock(bar * 0, bar, rootLowVoicing(44, 48, 51, 55)), // Abmaj7
     makeBlock(bar * 1, bar, rootLowVoicing(43, 47, 50, 53)), // G7
     makeBlock(bar * 2, bar, rootLowVoicing(48, 51, 55, 58)), // Cm7
-    makeBlock(bar * 3, bar, rootLowVoicing(51, 55, 58)), // Eb
+    makeBlock(bar * 3, bar, rootLowVoicing(51, 49, 55, 58)), // Eb7（下から Eb, C#, G, Bb）
   ];
 }
 
@@ -295,7 +295,10 @@ interface ProjectState {
   pasteNotesAt: (step: number) => void;
   duplicateSelectedNotes: () => NoteDragSnapshot[];
   applyNoteDrag: (snapshots: NoteDragSnapshot[], dStep: number, dMidi: number) => void;
+  /** 右端をドラッグしての長さ変更。start は固定したまま length だけ変える。 */
   applyNoteResize: (snapshots: NoteDragSnapshot[], dLength: number) => void;
+  /** 左端をドラッグしての長さ変更。末尾（start + length）は固定したまま start と length を逆方向に変える。 */
+  applyNoteResizeLeft: (snapshots: NoteDragSnapshot[], dStart: number) => void;
 
   clearAll: () => void;
   loadProject: (file: ProjectFile) => void;
@@ -1086,6 +1089,29 @@ export const useProjectStore = create<ProjectState>((set, get) => {
               const snap = byId.get(n.id);
               if (!snap) return n;
               return { ...n, length: snap.length + delta };
+            }),
+          };
+        }),
+      };
+    }),
+
+  applyNoteResizeLeft: (snapshots, dStart) =>
+    set((state) => {
+      if (snapshots.length === 0) return {};
+      // 末尾（start + length）を固定し、start を動かした分だけ length を逆方向に変える。
+      // ブロック左端(0)より前へは出さず、長さは最低1 step を保つ。
+      const delta = commonDelta(snapshots, () => 0, dStart, (s) => [-s.start, s.length - 1]);
+
+      const byId = new Map(snapshots.map((s) => [s.noteId, s]));
+      return {
+        blocks: state.blocks.map((b) => {
+          if (!b.notes.some((n) => byId.has(n.id))) return b;
+          return {
+            ...b,
+            notes: b.notes.map((n) => {
+              const snap = byId.get(n.id);
+              if (!snap) return n;
+              return { ...n, start: snap.start + delta, length: snap.length - delta };
             }),
           };
         }),

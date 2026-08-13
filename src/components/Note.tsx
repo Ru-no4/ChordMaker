@@ -60,7 +60,8 @@ export const Note = memo(function Note({
       title={midiToName(note.midi)}
     >
       {h >= 11 && <span className="pr-note__label">{midiToName(note.midi)}</span>}
-      <div className="pr-note__handle" data-note-handle="right" />
+      <div className="pr-note__handle pr-note__handle--left" data-note-handle="left" />
+      <div className="pr-note__handle pr-note__handle--right" data-note-handle="right" />
     </div>
   );
 });
