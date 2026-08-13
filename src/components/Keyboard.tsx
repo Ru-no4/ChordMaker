@@ -1,5 +1,7 @@
 import { isBlackKey, midiToName, pitchClass } from '../lib/theory';
 import { PITCHES, rowHeight } from '../lib/pianoRoll';
+import { useT } from '../i18n/useT';
+import { strings } from '../i18n/strings';
 
 interface KeyboardProps {
   /** アクティブなコードの構成音（ピッチクラス）。ハイライトに使う */
@@ -11,8 +13,9 @@ interface KeyboardProps {
 /** ピアノロール左側の鍵盤（幅 120px） */
 export function Keyboard({ activePitches, zoomY, onPreview }: KeyboardProps) {
   const h = rowHeight(zoomY);
+  const { t } = useT();
   return (
-    <div className="keyboard" style={{ height: PITCHES.length * h }} aria-label="鍵盤">
+    <div className="keyboard" style={{ height: PITCHES.length * h }} aria-label={t(strings.keyboard.ariaLabel)}>
       {PITCHES.map((midi) => {
         const black = isBlackKey(midi);
         const isC = pitchClass(midi) === 0;

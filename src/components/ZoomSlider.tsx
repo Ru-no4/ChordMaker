@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { ZOOM_FACTOR } from '../lib/grid';
+import { useT } from '../i18n/useT';
 import './ZoomSlider.css';
 
 interface ZoomSliderProps {
@@ -26,6 +27,7 @@ export function ZoomSlider({ orientation, value, min, max, onChange, ariaLabel }
   const ratio = max / min;
   const toSlider = (v: number) => Math.round((Math.log(v / min) / Math.log(ratio)) * STEPS);
   const fromSlider = (raw: number) => min * Math.pow(ratio, raw / STEPS);
+  const { locale } = useT();
 
   const step = useCallback(
     (factor: number) => onChange(Math.min(max, Math.max(min, value * factor))),
@@ -39,7 +41,7 @@ export function ZoomSlider({ orientation, value, min, max, onChange, ariaLabel }
         className="zoom-slider__btn"
         onClick={() => step(1 / ZOOM_FACTOR)}
         disabled={value <= min + 1e-6}
-        aria-label={`${ariaLabel} 縮小`}
+        aria-label={locale === 'ja' ? `${ariaLabel} 縮小` : `${ariaLabel} zoom out`}
       >
         −
       </button>
@@ -59,7 +61,7 @@ export function ZoomSlider({ orientation, value, min, max, onChange, ariaLabel }
         className="zoom-slider__btn"
         onClick={() => step(ZOOM_FACTOR)}
         disabled={value >= max - 1e-6}
-        aria-label={`${ariaLabel} 拡大`}
+        aria-label={locale === 'ja' ? `${ariaLabel} 拡大` : `${ariaLabel} zoom in`}
       >
         ＋
       </button>

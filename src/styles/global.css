@@ -24,6 +24,26 @@
   --grid-bar: rgba(255, 255, 255, 0.22);
   --grid-bar-strong: rgba(255, 255, 255, 0.28);
 
+  /* ボタン・つまみ・スクロールバーなど、テーマで切り替える必要のあるクロム色 */
+  --btn-grad-top: #3a4049;
+  --btn-grad-bottom: #2b3037;
+  --btn-grad-top-hover: #454c56;
+  --btn-grad-bottom-hover: #343a42;
+  --btn-active-bg: #262b31;
+
+  --thumb-grad-top: #d6dbe2;
+  --thumb-grad-bottom: #9aa3ae;
+  --thumb-border: #1b1f24;
+
+  --hover-overlay: rgba(255, 255, 255, 0.05);
+
+  --scrollbar-thumb: #3d444d;
+  --scrollbar-thumb-hover: #4c545f;
+
+  --modal-backdrop: rgba(6, 8, 11, 0.72);
+
+  --key-row-black: rgba(0, 0, 0, 0.26);
+
   --gutter-width: 120px;
 
   --font-ui: 'Inter', 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP',
@@ -31,6 +51,54 @@
   --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Courier New', monospace;
 
   color-scheme: dark;
+}
+
+/* ライトテーマのトークン上書き */
+html[data-theme='light'] {
+  --bg-deep: #f3f4f6;
+  --bg-panel: #ffffff;
+  --bg-raised: #eceef1;
+  --bg-sunken: #e6e8eb;
+  --lane-bg: #eef0f3;
+
+  --border: #d7dae0;
+  --border-strong: #c3c8d0;
+
+  --text: #1c2127;
+  --text-dim: #5b6472;
+  --text-faint: #8992a0;
+
+  --accent: #2f66d0;
+  --accent-deep: #1f4fa8;
+  --accent-text: #ffffff;
+  --play: #12875a;
+  --playhead: #e14343;
+
+  --grid-32: rgba(0, 0, 0, 0.04);
+  --grid-beat: rgba(0, 0, 0, 0.09);
+  --grid-bar: rgba(0, 0, 0, 0.16);
+  --grid-bar-strong: rgba(0, 0, 0, 0.24);
+
+  --btn-grad-top: #ffffff;
+  --btn-grad-bottom: #eceef1;
+  --btn-grad-top-hover: #ffffff;
+  --btn-grad-bottom-hover: #e2e5ea;
+  --btn-active-bg: #dde1e6;
+
+  --thumb-grad-top: #6b7684;
+  --thumb-grad-bottom: #3d4652;
+  --thumb-border: #1b1f24;
+
+  --hover-overlay: rgba(0, 0, 0, 0.05);
+
+  --scrollbar-thumb: #c3c8cf;
+  --scrollbar-thumb-hover: #a9afb8;
+
+  --modal-backdrop: rgba(20, 24, 30, 0.45);
+
+  --key-row-black: rgba(0, 0, 0, 0.055);
+
+  color-scheme: light;
 }
 
 /*
@@ -89,13 +157,13 @@ select {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3d444d;
+  background: var(--scrollbar-thumb);
   border-radius: 6px;
   border: 2px solid var(--bg-sunken);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #4c545f;
+  background: var(--scrollbar-thumb-hover);
 }
 
 ::-webkit-scrollbar-corner {

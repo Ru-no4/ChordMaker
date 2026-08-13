@@ -26,6 +26,8 @@ import { Keyboard } from './Keyboard';
 import { Note } from './Note';
 import { Playhead } from './Playhead';
 import { ZoomSlider } from './ZoomSlider';
+import { useT } from '../i18n/useT';
+import { strings } from '../i18n/strings';
 import './PianoRoll.css';
 
 interface PianoRollProps {
@@ -49,6 +51,8 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
   const zoomYBy = useProjectStore((s) => s.zoomYBy);
   const setZoomX = useProjectStore((s) => s.setZoomX);
   const setZoomY = useProjectStore((s) => s.setZoomY);
+  const { t, locale } = useT();
+  const pr = strings.pianoRoll;
 
   const { ref, onScroll } = useSyncedScroll<HTMLDivElement>();
   const gridRef = useRef<HTMLDivElement | null>(null);
@@ -124,7 +128,7 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
   const headerStyle = styleFor(activeSegment?.detection.chord?.category ?? null);
 
   return (
-    <section className={`piano-roll ${open ? 'is-open' : ''}`} aria-label="ピアノロール">
+    <section className={`piano-roll ${open ? 'is-open' : ''}`} aria-label={t(pr.ariaLabel)}>
       <div className="pr-header">
         <button
           type="button"
@@ -147,7 +151,7 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
               style={{ background: headerStyle.base, borderColor: headerStyle.accent }}
             />
             <strong>
-              {activeSegment?.detection.chord?.symbol ?? '構成音を配置してください'}
+              {activeSegment?.detection.chord?.symbol ?? t(pr.placeNotesHint)}
             </strong>
             <span className="pr-current__meta">
               {segments.length > 1 && `${segments.length} chords / `}
@@ -156,13 +160,17 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
           </span>
         ) : (
           <span className="pr-current pr-current--empty">
-            コードブロックを選択してください
+            {t(pr.selectBlockHint)}
           </span>
         )}
 
         <div className="pr-header__right">
           {selectedNoteIds.length > 1 && (
-            <span className="pr-selcount">{selectedNoteIds.length} 選択中</span>
+            <span className="pr-selcount">
+              {locale === 'ja'
+                ? `${selectedNoteIds.length} 選択中`
+                : `${selectedNoteIds.length} selected`}
+            </span>
           )}
           <button
             type="button"
@@ -170,7 +178,7 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
             disabled={!selected || selected.notes.length === 0}
             onClick={() => selected && clearNotes(selected.id)}
           >
-            構成音クリア
+            {t(pr.clearNotes)}
           </button>
         </div>
       </div>
@@ -271,7 +279,7 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
             min={ZOOM_Y_MIN}
             max={ZOOM_Y_MAX}
             onChange={setZoomY}
-            ariaLabel="ピアノロールの縦方向表示倍率"
+            ariaLabel={t(pr.zoomVAria)}
           />
         </div>
       </div>
@@ -284,7 +292,7 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
           min={ZOOM_X_MIN}
           max={ZOOM_X_MAX}
           onChange={setZoomX}
-          ariaLabel="ピアノロールの横幅表示倍率"
+          ariaLabel={t(pr.zoomHAria)}
         />
       </div>
     </section>

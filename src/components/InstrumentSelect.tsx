@@ -1,5 +1,7 @@
 import { useProjectStore } from '../store/useProjectStore';
 import { INSTRUMENT_GROUPS } from '../lib/instruments';
+import { useT } from '../i18n/useT';
+import { strings } from '../i18n/strings';
 import './InstrumentSelect.css';
 
 /**
@@ -11,11 +13,13 @@ export function InstrumentSelect() {
   const setInstrument = useProjectStore((s) => s.setInstrument);
   const loading = useProjectStore((s) => s.instrumentLoading);
   const error = useProjectStore((s) => s.instrumentError);
+  const { t } = useT();
+  const is = strings.instrumentSelect;
 
   return (
     <div className="cb-field">
       <label className="cb-label" htmlFor="instrument-select">
-        音源
+        {t(is.label)}
       </label>
       <div className="instrument-select">
         <select
@@ -25,24 +29,24 @@ export function InstrumentSelect() {
           onChange={(e) => setInstrument(e.target.value)}
         >
           {INSTRUMENT_GROUPS.map((group) => (
-            <optgroup key={group.label} label={group.label}>
+            <optgroup key={group.label.ja} label={t(group.label)}>
               {group.presets.map((preset) => (
                 <option key={preset.id} value={preset.id}>
-                  {preset.label}
+                  {t(preset.label)}
                 </option>
               ))}
             </optgroup>
           ))}
         </select>
         {loading && (
-          <span className="instrument-select__status" title="サンプルを読み込み中（今は合成音で鳴ります）">
+          <span className="instrument-select__status" title={t(is.loadingTitle)}>
             <span className="instrument-select__spinner" aria-hidden="true" />
-            読込中
+            {t(is.loadingText)}
           </span>
         )}
         {!loading && error && (
-          <span className="instrument-select__status is-error" title={error}>
-            読込失敗
+          <span className="instrument-select__status is-error" title={t(strings.errors.instrumentLoadFailed)}>
+            {t(is.loadFailedText)}
           </span>
         )}
       </div>

@@ -46,7 +46,7 @@
   padding: 0 10px;
   border: 1px solid var(--border-strong);
   border-radius: 6px;
-  background: linear-gradient(180deg, #3a4049 0%, #2b3037 100%);
+  background: linear-gradient(180deg, var(--btn-grad-top) 0%, var(--btn-grad-bottom) 100%);
   color: var(--text);
   font-size: 11px;
   font-weight: 600;
@@ -56,11 +56,11 @@
 }
 
 .cb-btn:hover {
-  background: linear-gradient(180deg, #454c56 0%, #343a42 100%);
+  background: linear-gradient(180deg, var(--btn-grad-top-hover) 0%, var(--btn-grad-bottom-hover) 100%);
 }
 
 .cb-btn:active {
-  background: #262b31;
+  background: var(--btn-active-bg);
 }
 
 .cb-btn:disabled {
@@ -69,7 +69,7 @@
 }
 
 .cb-btn:disabled:hover {
-  background: linear-gradient(180deg, #3a4049 0%, #2b3037 100%);
+  background: linear-gradient(180deg, var(--btn-grad-top) 0%, var(--btn-grad-bottom) 100%);
 }
 
 .cb-btn.is-active {
@@ -170,8 +170,8 @@
   width: 13px;
   height: 18px;
   border-radius: 3px;
-  background: linear-gradient(180deg, #d6dbe2 0%, #9aa3ae 100%);
-  border: 1px solid #1b1f24;
+  background: linear-gradient(180deg, var(--thumb-grad-top) 0%, var(--thumb-grad-bottom) 100%);
+  border: 1px solid var(--thumb-border);
   cursor: pointer;
 }
 
@@ -179,8 +179,8 @@
   width: 13px;
   height: 18px;
   border-radius: 3px;
-  background: linear-gradient(180deg, #d6dbe2 0%, #9aa3ae 100%);
-  border: 1px solid #1b1f24;
+  background: linear-gradient(180deg, var(--thumb-grad-top) 0%, var(--thumb-grad-bottom) 100%);
+  border: 1px solid var(--thumb-border);
   cursor: pointer;
 }
 

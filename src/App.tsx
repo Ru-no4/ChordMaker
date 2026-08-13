@@ -8,29 +8,38 @@ import { TOOLS } from './components/ToolStrip';
 import { useTransport } from './hooks/useTransport';
 import { useProjectStore, type EditorTool } from './store/useProjectStore';
 import { usePlayheadStore } from './store/usePlayheadStore';
+import { useT, type Localized } from './i18n/useT';
+import { strings } from './i18n/strings';
 import './styles/app.css';
 
 /** ステータスバーに出す、そのツールで今できること */
-const TOOL_HINTS: Record<EditorTool, string[]> = {
+const TOOL_HINTS: Record<EditorTool, Localized[]> = {
   draw: [
-    'タップで配置',
-    'ドラッグで移動',
-    '右端ドラッグで長さ変更',
-    'ダブルクリックで削除',
+    { ja: 'タップで配置', en: 'Tap to place' },
+    { ja: 'ドラッグで移動', en: 'Drag to move' },
+    { ja: '右端ドラッグで長さ変更', en: 'Drag the right edge to resize' },
+    { ja: 'ダブルクリックで削除', en: 'Double-click to delete' },
   ],
   range: [
-    'ドラッグで矩形選択（小節を跨げます）',
-    'タップで選択トグル',
-    '選択をまとめて移動・リサイズ',
-    'ダブルクリックで削除',
+    { ja: 'ドラッグで矩形選択（小節を跨げます）', en: 'Drag to box-select (can span bars)' },
+    { ja: 'タップで選択トグル', en: 'Tap to toggle selection' },
+    { ja: '選択をまとめて移動・リサイズ', en: 'Move or resize the whole selection together' },
+    { ja: 'ダブルクリックで削除', en: 'Double-click to delete' },
   ],
-  erase: ['タップで削除', 'なぞってまとめて削除'],
-  pan: ['ドラッグでスクロール', '内容には触れません'],
+  erase: [
+    { ja: 'タップで削除', en: 'Tap to delete' },
+    { ja: 'なぞってまとめて削除', en: 'Drag over to delete in one go' },
+  ],
+  pan: [
+    { ja: 'ドラッグでスクロール', en: 'Drag to scroll' },
+    { ja: '内容には触れません', en: 'Never touches the content' },
+  ],
 };
 
 export default function App() {
   const { play, pause, stop, seek, previewNote, previewNotes, isPlaying } = useTransport();
   const [helpOpen, setHelpOpen] = useState(false);
+  const { t } = useT();
 
   const editorTool = useProjectStore((s) => s.editorTool);
   const setEditorTool = useProjectStore((s) => s.setEditorTool);
@@ -175,14 +184,14 @@ export default function App() {
       <footer className="status-bar">
         <span className="status-bar__tool">
           <span className="status-bar__tool-icon">{tool?.icon}</span>
-          {tool?.label}
+          {tool && t(tool.label)}
         </span>
         {TOOL_HINTS[editorTool].map((hint) => (
-          <span key={hint}>{hint}</span>
+          <span key={hint.ja}>{t(hint)}</span>
         ))}
         <span className="status-bar__spacer" />
         <button type="button" className="status-bar__help" onClick={() => setHelpOpen(true)}>
-          操作一覧 <kbd>?</kbd>
+          {t(strings.shortcutHelp.title)} <kbd>?</kbd>
         </button>
       </footer>
 

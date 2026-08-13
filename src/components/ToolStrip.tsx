@@ -1,11 +1,13 @@
 import { useProjectStore, type EditorTool } from '../store/useProjectStore';
+import { useT, type Localized } from '../i18n/useT';
+import { strings } from '../i18n/strings';
 import './ToolStrip.css';
 
 interface ToolDef {
   id: EditorTool;
-  label: string;
+  label: Localized;
   shortcut: string;
-  hint: string;
+  hint: Localized;
   icon: JSX.Element;
 }
 
@@ -13,9 +15,9 @@ interface ToolDef {
 export const TOOLS: ToolDef[] = [
   {
     id: 'draw',
-    label: '鉛筆',
+    label: { ja: '鉛筆', en: 'Pencil' },
     shortcut: '1',
-    hint: '配置・選択・移動・長さ変更',
+    hint: { ja: '配置・選択・移動・長さ変更', en: 'Place, select, move, resize' },
     icon: (
       <svg viewBox="0 0 18 18" width="17" height="17" aria-hidden="true">
         <path
@@ -31,9 +33,9 @@ export const TOOLS: ToolDef[] = [
   },
   {
     id: 'range',
-    label: '範囲選択',
+    label: { ja: '範囲選択', en: 'Range select' },
     shortcut: '2',
-    hint: '複数ノートの選択・一括移動・一括リサイズ',
+    hint: { ja: '複数ノートの選択・一括移動・一括リサイズ', en: 'Select multiple notes, move or resize together' },
     icon: (
       <svg viewBox="0 0 18 18" width="17" height="17" aria-hidden="true">
         <rect
@@ -52,9 +54,9 @@ export const TOOLS: ToolDef[] = [
   },
   {
     id: 'erase',
-    label: '消しゴム',
+    label: { ja: '消しゴム', en: 'Eraser' },
     shortcut: '3',
-    hint: 'タップで削除・なぞって一括削除',
+    hint: { ja: 'タップで削除・なぞって一括削除', en: 'Tap to delete, drag to delete in bulk' },
     icon: (
       <svg viewBox="0 0 18 18" width="17" height="17" aria-hidden="true">
         <path
@@ -71,9 +73,9 @@ export const TOOLS: ToolDef[] = [
   },
   {
     id: 'pan',
-    label: '手',
+    label: { ja: '手', en: 'Hand' },
     shortcut: '4',
-    hint: 'ドラッグでビューをスクロール（内容に触れない）',
+    hint: { ja: 'ドラッグでビューをスクロール（内容に触れない）', en: 'Drag to scroll the view (never touches content)' },
     icon: (
       <svg viewBox="0 0 18 18" width="17" height="17" aria-hidden="true">
         <path
@@ -93,9 +95,10 @@ export const TOOLS: ToolDef[] = [
 export function ToolStrip() {
   const editorTool = useProjectStore((s) => s.editorTool);
   const setEditorTool = useProjectStore((s) => s.setEditorTool);
+  const { t } = useT();
 
   return (
-    <div className="tool-strip" role="group" aria-label="編集ツール">
+    <div className="tool-strip" role="group" aria-label={t(strings.toolStrip.groupAria)}>
       {TOOLS.map((tool) => (
         <button
           key={tool.id}
@@ -103,8 +106,8 @@ export function ToolStrip() {
           className={`tool-btn ${editorTool === tool.id ? 'is-active' : ''}`}
           onClick={() => setEditorTool(tool.id)}
           aria-pressed={editorTool === tool.id}
-          aria-label={tool.label}
-          title={`${tool.label}（${tool.shortcut}） — ${tool.hint}`}
+          aria-label={t(tool.label)}
+          title={`${t(tool.label)}（${tool.shortcut}） — ${t(tool.hint)}`}
         >
           {tool.icon}
         </button>

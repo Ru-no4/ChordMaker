@@ -68,7 +68,7 @@ export function useTransport() {
       .catch((error: unknown) => {
         if (cancelled) return;
         // 失敗しても内蔵シンセで鳴り続ける
-        setInstrumentStatus(false, '音源を読み込めませんでした');
+        setInstrumentStatus(false, true);
         console.error('音源の読み込みに失敗しました', error);
       });
     return () => {

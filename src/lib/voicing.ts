@@ -10,16 +10,52 @@ import { pitchClass } from './theory';
 
 export type VoicingPreset = 'root-low' | 'close' | 'open' | 'drop2' | 'drop3';
 
-export const VOICING_PRESETS: Array<{ id: VoicingPreset; label: string; title: string }> = [
+interface Localized {
+  ja: string;
+  en: string;
+}
+
+export const VOICING_PRESETS: Array<{ id: VoicingPreset; label: Localized; title: Localized }> = [
   {
     id: 'root-low',
-    label: 'ルート低め',
-    title: 'ルート音を低いオクターブに残し、残りの構成音を1オクターブ上げる（既定のコード進行と同じパターン）',
+    label: { ja: 'ルート低め', en: 'Root low' },
+    title: {
+      ja: 'ルート音を低いオクターブに残し、残りの構成音を1オクターブ上げる（既定のコード進行と同じパターン）',
+      en: 'Keeps the root in a low octave and raises the rest of the notes an octave (the same pattern as the default chord progression)',
+    },
   },
-  { id: 'close', label: 'Close', title: '構成音を1オクターブ以内に密集させる' },
-  { id: 'open', label: 'Open', title: '1音おきに1オクターブ上げて間隔を広げる' },
-  { id: 'drop2', label: 'Drop2', title: '上から2番目の音を1オクターブ下げる' },
-  { id: 'drop3', label: 'Drop3', title: '上から3番目の音を1オクターブ下げる' },
+  {
+    id: 'close',
+    label: { ja: 'Close', en: 'Close' },
+    title: {
+      ja: '構成音を1オクターブ以内に密集させる',
+      en: 'Packs the notes within a single octave',
+    },
+  },
+  {
+    id: 'open',
+    label: { ja: 'Open', en: 'Open' },
+    title: {
+      ja: '1音おきに1オクターブ上げて間隔を広げる',
+      en: 'Raises every other note an octave to spread them out',
+    },
+  },
+  {
+    id: 'drop2',
+    label: { ja: 'Drop2', en: 'Drop2' },
+    title: {
+      ja: '上から2番目の音を1オクターブ下げる',
+      en: 'Drops the second note from the top an octave',
+    },
+  },
+  {
+    id: 'drop3',
+    label: { ja: 'Drop3', en: 'Drop3' },
+    title: {
+      ja: '上から3番目の音を1オクターブ下げる',
+      en: 'Drops the third note from the top an octave',
+    },
+  },
 ];
 
 /** 現在の最低音の近くに、指定ピッチクラスの音を1つ選ぶ（その音以下で最も近い位置） */

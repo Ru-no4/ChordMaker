@@ -1,4 +1,8 @@
 import { useProjectStore } from '../store/useProjectStore';
+import { useThemeStore } from '../store/useThemeStore';
+import { useLocaleStore } from '../store/useLocaleStore';
+import { useT } from '../i18n/useT';
+import { strings } from '../i18n/strings';
 import {
   CHORD_DIVISIONS,
   CHORD_RESOLUTION_LABELS,
@@ -62,6 +66,12 @@ export function ControlBar({
   const volumeDb = useProjectStore((s) => s.volumeDb);
   const setVolumeDb = useProjectStore((s) => s.setVolumeDb);
   const isPlaying = useProjectStore((s) => s.isPlaying);
+  const theme = useThemeStore((s) => s.theme);
+  const toggleTheme = useThemeStore((s) => s.toggleTheme);
+  const locale = useLocaleStore((s) => s.locale);
+  const toggleLocale = useLocaleStore((s) => s.toggleLocale);
+  const { t } = useT();
+  const cb = strings.controlBar;
 
   const sigLabel = `${timeSignature.numerator}/${timeSignature.denominator}`;
 
@@ -77,8 +87,8 @@ export function ControlBar({
             className="cb-btn"
             onClick={undo}
             disabled={!canUndo}
-            title="元に戻す (Ctrl+Z)"
-            aria-label="元に戻す"
+            title={t(cb.undo)}
+            aria-label={t(cb.undoAria)}
           >
             <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
               <path
@@ -96,8 +106,8 @@ export function ControlBar({
             className="cb-btn"
             onClick={redo}
             disabled={!canRedo}
-            title="やり直す (Ctrl+Y)"
-            aria-label="やり直す"
+            title={t(cb.redo)}
+            aria-label={t(cb.redoAria)}
           >
             <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
               <path
@@ -117,8 +127,8 @@ export function ControlBar({
             type="button"
             className="cb-btn"
             onClick={onJumpToStart}
-            title="先頭へ戻る"
-            aria-label="先頭へ戻る"
+            title={t(cb.jumpToStart)}
+            aria-label={t(cb.jumpToStart)}
           >
             <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
               <rect x="2" y="3" width="2" height="10" fill="currentColor" />
@@ -130,8 +140,8 @@ export function ControlBar({
             type="button"
             className={`cb-btn cb-btn--play ${isPlaying ? 'is-active' : ''}`}
             onClick={isPlaying ? onPause : onPlay}
-            title={isPlaying ? '一時停止 (Space)' : '再生 (Space)'}
-            aria-label={isPlaying ? '一時停止' : '再生'}
+            title={isPlaying ? t(cb.pause) : t(cb.play)}
+            aria-label={isPlaying ? t(cb.pauseAria) : t(cb.playAria)}
           >
             {isPlaying ? (
               <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
@@ -148,8 +158,8 @@ export function ControlBar({
             type="button"
             className="cb-btn"
             onClick={onStop}
-            title="停止 (Esc)"
-            aria-label="停止"
+            title={t(cb.stop)}
+            aria-label={t(cb.stopAria)}
           >
             <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
               <rect x="3" y="3" width="10" height="10" fill="currentColor" />
@@ -159,7 +169,7 @@ export function ControlBar({
             type="button"
             className={`cb-btn cb-btn--loop ${loop ? 'is-active' : ''}`}
             onClick={toggleLoop}
-            title="ループ再生"
+            title={t(cb.loopTitle)}
             aria-pressed={loop}
           >
             <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
@@ -178,7 +188,7 @@ export function ControlBar({
             type="button"
             className={`cb-btn cb-btn--loop ${followPlayhead ? 'is-active' : ''}`}
             onClick={toggleFollowPlayhead}
-            title="再生ヘッドを画面中央に追従させる"
+            title={t(cb.followTitle)}
             aria-pressed={followPlayhead}
           >
             <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
@@ -202,7 +212,7 @@ export function ControlBar({
 
         <div className="cb-field cb-field--bpm">
           <label className="cb-label" htmlFor="bpm-input">
-            BPM
+            {t(cb.bpmLabel)}
           </label>
           <div className="cb-bpm-group">
             <NumberField
@@ -220,14 +230,14 @@ export function ControlBar({
               max={240}
               value={bpm}
               onChange={(e) => setBpm(Number(e.target.value))}
-              aria-label="BPM スライダー"
+              aria-label={t(cb.bpmSliderAria)}
             />
           </div>
         </div>
 
         <div className="cb-field">
           <label className="cb-label" htmlFor="sig-select">
-            拍子
+            {t(cb.timeSignatureLabel)}
           </label>
           <select
             id="sig-select"
@@ -243,9 +253,9 @@ export function ControlBar({
               }
             }}
           >
-            {TIME_SIGNATURES.map((t) => (
-              <option key={t.label} value={t.label}>
-                {t.label}
+            {TIME_SIGNATURES.map((sig) => (
+              <option key={sig.label} value={sig.label}>
+                {sig.label}
               </option>
             ))}
           </select>
@@ -253,7 +263,7 @@ export function ControlBar({
 
         <div className="cb-field">
           <label className="cb-label" htmlFor="bars-input">
-            小節数
+            {t(cb.barsLabel)}
           </label>
           <NumberField
             id="bars-input"
@@ -272,7 +282,7 @@ export function ControlBar({
 
         <div className="cb-field cb-field--volume">
           <label className="cb-label" htmlFor="vol-slider">
-            Volume
+            {t(cb.volumeLabel)}
           </label>
           <input
             id="vol-slider"
@@ -282,7 +292,7 @@ export function ControlBar({
             max={0}
             value={volumeDb}
             onChange={(e) => setVolumeDb(Number(e.target.value))}
-            aria-label="音量"
+            aria-label={t(cb.volumeAria)}
           />
         </div>
 
@@ -291,8 +301,8 @@ export function ControlBar({
         <ToolStrip />
 
         <div className="cb-field">
-          <label className="cb-label" htmlFor="chord-select" title="コードを判定する時間の刻み（小節を何分割するか）">
-            Chord
+          <label className="cb-label" htmlFor="chord-select" title={t(cb.chordTitle)}>
+            {t(cb.chordLabel)}
           </label>
           <select
             id="chord-select"
@@ -302,7 +312,7 @@ export function ControlBar({
           >
             {CHORD_DIVISIONS.map((res) => (
               <option key={res} value={res}>
-                {CHORD_RESOLUTION_LABELS[res]}
+                {t(CHORD_RESOLUTION_LABELS[res])}
               </option>
             ))}
           </select>
@@ -310,7 +320,7 @@ export function ControlBar({
 
         <div className="cb-field">
           <label className="cb-label" htmlFor="quantize-select">
-            Quantize
+            {t(cb.quantizeLabel)}
           </label>
           <select
             id="quantize-select"
@@ -331,7 +341,7 @@ export function ControlBar({
           className={`cb-btn cb-btn--wide ${snap ? 'is-active' : ''}`}
           onClick={toggleSnap}
           aria-pressed={snap}
-          title="グリッドへの吸着"
+          title={t(cb.snapTitle)}
         >
           SNAP {snap ? 'ON' : 'OFF'}
         </button>
@@ -339,9 +349,43 @@ export function ControlBar({
         <button
           type="button"
           className="cb-btn cb-btn--help"
+          onClick={toggleTheme}
+          title={theme === 'dark' ? t(cb.themeToLight) : t(cb.themeToDark)}
+          aria-label={t(cb.themeToggleAria)}
+        >
+          {theme === 'dark' ? (
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+              <circle cx="8" cy="8" r="3.4" fill="currentColor" />
+              <g stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                <path d="M8 1v1.6M8 13.4V15M15 8h-1.6M2.6 8H1M12.7 3.3l-1.1 1.1M4.4 11.6l-1.1 1.1M12.7 12.7l-1.1-1.1M4.4 4.4 3.3 3.3" />
+              </g>
+            </svg>
+          ) : (
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+              <path
+                d="M13.8 10.2A5.8 5.8 0 0 1 5.8 2.2a5.8 5.8 0 1 0 8 8Z"
+                fill="currentColor"
+              />
+            </svg>
+          )}
+        </button>
+
+        <button
+          type="button"
+          className="cb-btn cb-btn--help"
+          onClick={toggleLocale}
+          title={t(cb.localeToggleTitle)}
+          aria-label={t(cb.localeToggleAria)}
+        >
+          {locale === 'ja' ? 'EN' : 'JA'}
+        </button>
+
+        <button
+          type="button"
+          className="cb-btn cb-btn--help"
           onClick={onOpenHelp}
-          title="操作一覧（?）"
-          aria-label="操作一覧を開く"
+          title={t(cb.helpTitle)}
+          aria-label={t(cb.helpAria)}
         >
           ?
         </button>

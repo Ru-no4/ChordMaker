@@ -295,7 +295,7 @@
 }
 
 .pr-row--black {
-  background: rgba(0, 0, 0, 0.26);
+  background: var(--key-row-black);
 }
 
 .pr-row--white {

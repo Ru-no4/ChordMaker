@@ -10,6 +10,11 @@
  */
 import { getSoundfontNames } from 'smplr';
 
+interface Localized {
+  ja: string;
+  en: string;
+}
+
 /** 内蔵シンセ。ダウンロードなしで即鳴る */
 export const SYNTH_ID = 'synth';
 /** Steinway のマルチサンプルピアノ */
@@ -32,7 +37,7 @@ export interface SynthPresetOptions {
 
 export interface InstrumentPreset {
   id: string;
-  label: string;
+  label: Localized;
   kind: InstrumentKind;
   /** kind === 'soundfont' のときの音色名 */
   soundfont?: string;
@@ -67,19 +72,19 @@ const CHIP_ENVELOPE = { attack: 0.002, decay: 0.05, sustain: 0.85, release: 0.05
 const CHIP_PRESETS: InstrumentPreset[] = [
   {
     id: CHIP_SQUARE_ID,
-    label: '8bit スクエア',
+    label: { ja: '8bit スクエア', en: '8bit Square' },
     kind: 'synth',
     synth: { oscillator: { type: 'square' }, envelope: CHIP_ENVELOPE },
   },
   {
     id: CHIP_SAWTOOTH_ID,
-    label: '8bit のこぎり波',
+    label: { ja: '8bit のこぎり波', en: '8bit Sawtooth' },
     kind: 'synth',
     synth: { oscillator: { type: 'sawtooth' }, envelope: CHIP_ENVELOPE },
   },
   {
     id: CHIP_TRIANGLE_ID,
-    label: '8bit トライアングル',
+    label: { ja: '8bit トライアングル', en: '8bit Triangle' },
     kind: 'synth',
     synth: { oscillator: { type: 'triangle' }, envelope: CHIP_ENVELOPE },
   },
@@ -109,17 +114,20 @@ const prettify = (name: string): string =>
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
 
-const soundfontPreset = (name: string, label?: string): InstrumentPreset => ({
-  id: name,
-  label: label ?? prettify(name),
-  kind: 'soundfont',
-  soundfont: name,
-});
+const soundfontPreset = (name: string): InstrumentPreset => {
+  const pretty = prettify(name);
+  return {
+    id: name,
+    label: { ja: pretty, en: pretty },
+    kind: 'soundfont',
+    soundfont: name,
+  };
+};
 
 /** よく使うものを先に出す。ここに出さない音色は「すべての音色」から選べる。 */
-const FEATURED: Array<{ group: string; names: string[] }> = [
+const FEATURED: Array<{ group: Localized; names: string[] }> = [
   {
-    group: 'ピアノ・鍵盤',
+    group: { ja: 'ピアノ・鍵盤', en: 'Piano & Keys' },
     names: [
       'acoustic_grand_piano',
       'bright_acoustic_piano',
@@ -131,11 +139,11 @@ const FEATURED: Array<{ group: string; names: string[] }> = [
     ],
   },
   {
-    group: 'オルガン',
+    group: { ja: 'オルガン', en: 'Organ' },
     names: ['drawbar_organ', 'percussive_organ', 'rock_organ', 'church_organ', 'reed_organ'],
   },
   {
-    group: 'ギター',
+    group: { ja: 'ギター', en: 'Guitar' },
     names: [
       'acoustic_guitar_nylon',
       'acoustic_guitar_steel',
@@ -144,7 +152,7 @@ const FEATURED: Array<{ group: string; names: string[] }> = [
     ],
   },
   {
-    group: '弦・パッド',
+    group: { ja: '弦・パッド', en: 'Strings & Pads' },
     names: [
       'string_ensemble_1',
       'string_ensemble_2',
@@ -156,13 +164,13 @@ const FEATURED: Array<{ group: string; names: string[] }> = [
     ],
   },
   {
-    group: '音板・その他',
+    group: { ja: '音板・その他', en: 'Mallets & Other' },
     names: ['vibraphone', 'marimba', 'music_box', 'kalimba'],
   },
 ];
 
 export interface InstrumentGroup {
-  label: string;
+  label: Localized;
   presets: InstrumentPreset[];
 }
 
@@ -172,13 +180,22 @@ function buildGroups(): InstrumentGroup[] {
 
   const groups: InstrumentGroup[] = [
     {
-      label: '内蔵',
+      label: { ja: '内蔵', en: 'Built-in' },
       presets: [
-        { id: SYNTH_ID, label: '合成音', kind: 'synth', synth: DEFAULT_SYNTH_OPTIONS },
-        { id: SPLENDID_ID, label: 'Splendid Grand Piano', kind: 'splendid' },
+        {
+          id: SYNTH_ID,
+          label: { ja: '合成音', en: 'Synth' },
+          kind: 'synth',
+          synth: DEFAULT_SYNTH_OPTIONS,
+        },
+        {
+          id: SPLENDID_ID,
+          label: { ja: 'Splendid Grand Piano', en: 'Splendid Grand Piano' },
+          kind: 'splendid',
+        },
       ],
     },
-    { label: '8bit', presets: CHIP_PRESETS },
+    { label: { ja: '8bit', en: '8bit' }, presets: CHIP_PRESETS },
   ];
 
   for (const { group, names } of FEATURED) {
@@ -195,7 +212,9 @@ function buildGroups(): InstrumentGroup[] {
   const rest = getSoundfontNames()
     .filter((name) => !featuredNames.has(name) && !EXCLUDED_SOUNDFONTS.has(name))
     .map((name) => soundfontPreset(name));
-  if (rest.length > 0) groups.push({ label: 'すべての音色', presets: rest });
+  if (rest.length > 0) {
+    groups.push({ label: { ja: 'すべての音色', en: 'All instruments' }, presets: rest });
+  }
 
   return groups;
 }
@@ -208,7 +227,8 @@ const BY_ID = new Map<string, InstrumentPreset>(
 
 export const findInstrument = (id: string): InstrumentPreset | null => BY_ID.get(id) ?? null;
 
-export const instrumentLabel = (id: string): string => findInstrument(id)?.label ?? id;
+export const instrumentLabel = (id: string, locale: 'ja' | 'en'): string =>
+  findInstrument(id)?.label[locale] ?? id;
 
 /** 既定はダウンロードなしで鳴る内蔵シンセ */
 export const DEFAULT_INSTRUMENT_ID = SYNTH_ID;

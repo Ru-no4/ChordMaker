@@ -119,8 +119,8 @@ export interface DetectionResult {
   alternatives: ChordAnalysis[];
   /** kind === 'candidates' のときの候補和音 */
   candidates: ChordCandidate[];
-  /** 2音のときの音程名（例: "完全5度"） */
-  intervalName: string | null;
+  /** 2音のときの音程（半音数）。表示名への変換は locale に応じて formatIntervalName で行う */
+  intervalSemitones: number | null;
   /** 入力された構成音（MIDI 昇順） */
   notes: number[];
 }
@@ -129,24 +129,24 @@ export interface DetectionResult {
 /* 音程名（2音のとき用）                                                */
 /* ------------------------------------------------------------------ */
 
-const INTERVAL_NAMES = [
-  '完全1度（ユニゾン）',
-  '短2度',
-  '長2度',
-  '短3度',
-  '長3度',
-  '完全4度',
-  '増4度（三全音）',
-  '完全5度',
-  '短6度',
-  '長6度',
-  '短7度',
-  '長7度',
+const INTERVAL_NAMES: Array<{ ja: string; en: string }> = [
+  { ja: '完全1度（ユニゾン）', en: 'Perfect unison' },
+  { ja: '短2度', en: 'Minor 2nd' },
+  { ja: '長2度', en: 'Major 2nd' },
+  { ja: '短3度', en: 'Minor 3rd' },
+  { ja: '長3度', en: 'Major 3rd' },
+  { ja: '完全4度', en: 'Perfect 4th' },
+  { ja: '増4度（三全音）', en: 'Augmented 4th (tritone)' },
+  { ja: '完全5度', en: 'Perfect 5th' },
+  { ja: '短6度', en: 'Minor 6th' },
+  { ja: '長6度', en: 'Major 6th' },
+  { ja: '短7度', en: 'Minor 7th' },
+  { ja: '長7度', en: 'Major 7th' },
 ];
 
-export function intervalName(a: number, b: number): string {
-  const semis = Math.abs(b - a);
-  const base = INTERVAL_NAMES[semis % 12];
+/** 半音数から音程名を組み立てる（表示用。locale はコンポーネント側の useT から渡す） */
+export function formatIntervalName(semis: number, locale: 'ja' | 'en'): string {
+  const base = INTERVAL_NAMES[semis % 12][locale];
   const octaves = Math.floor(semis / 12);
   return octaves > 0 ? `${base} + ${octaves}oct` : base;
 }
@@ -544,7 +544,7 @@ const EMPTY_RESULT: DetectionResult = {
   chord: null,
   alternatives: [],
   candidates: [],
-  intervalName: null,
+  intervalSemitones: null,
   notes: [],
 };
 
@@ -566,7 +566,7 @@ export function detectChord(midiNotes: number[]): DetectionResult {
       chord: null,
       alternatives: [],
       candidates: buildCandidates(pcs, bassPc),
-      intervalName: notes.length === 2 ? intervalName(notes[0], notes[1]) : null,
+      intervalSemitones: notes.length === 2 ? Math.abs(notes[1] - notes[0]) : null,
       notes,
     };
   }
@@ -630,7 +630,7 @@ export function detectChord(midiNotes: number[]): DetectionResult {
       chord: null,
       alternatives: [],
       candidates: buildCandidates(pcs, bassPc),
-      intervalName: null,
+      intervalSemitones: null,
       notes,
     };
   }
@@ -657,7 +657,7 @@ export function detectChord(midiNotes: number[]): DetectionResult {
     chord: unique[0],
     alternatives,
     candidates: [],
-    intervalName: null,
+    intervalSemitones: null,
     notes,
   };
 }

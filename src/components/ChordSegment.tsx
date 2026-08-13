@@ -1,5 +1,7 @@
 import { styleFor } from '../lib/colors';
 import type { ChordSegment as Segment } from '../lib/segmentation';
+import { useT } from '../i18n/useT';
+import { strings } from '../i18n/strings';
 
 interface ChordSegmentProps {
   segment: Segment;
@@ -29,6 +31,7 @@ export function ChordSegment({
   const { detection } = segment;
   const style = styleFor(detection.chord?.category ?? null);
   const width = segment.length * stepW;
+  const { t, locale } = useT();
 
   const label =
     detection.kind === 'chord'
@@ -41,8 +44,10 @@ export function ChordSegment({
     detection.kind === 'chord'
       ? detection.chord!.degrees.join(' ')
       : detection.kind === 'candidates'
-        ? `候補 ${detection.candidates.length} 件`
-        : 'ノート未入力';
+        ? locale === 'ja'
+          ? `候補 ${detection.candidates.length} 件`
+          : `${detection.candidates.length} candidate${detection.candidates.length === 1 ? '' : 's'}`
+        : t(strings.chordSegment.notesNotEntered);
 
   // 幅と高さに応じて表示要素を落とす
   const showSub = width >= 110 && height >= 44;

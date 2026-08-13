@@ -6,8 +6,21 @@ import {
   downloadProjectFile,
   parseProjectFile,
   serializeProject,
+  type ProjectFileErrorCode,
 } from '../lib/projectFile';
+import { useT } from '../i18n/useT';
+import { strings } from '../i18n/strings';
 import './ProjectFileControls.css';
+
+const ERROR_MESSAGES: Record<ProjectFileErrorCode, { ja: string; en: string }> = {
+  'invalid-json': strings.errors.invalidJson,
+  'invalid-format': strings.errors.invalidFormat,
+  'wrong-app': strings.errors.wrongApp,
+  'unsupported-version': strings.errors.unsupportedVersion,
+  'corrupt-blocks': strings.errors.corruptBlocks,
+  'corrupt-time-signature': strings.errors.corruptTimeSignature,
+  'corrupt-settings': strings.errors.corruptSettings,
+};
 
 /** ファイル名に使えない文字を避けつつ、日時を埋め込んだ既定のファイル名 */
 function defaultFilename(): string {
@@ -21,7 +34,9 @@ function defaultFilename(): string {
  */
 export function ProjectFileControls() {
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ProjectFileErrorCode | 'generic' | null>(null);
+  const { t } = useT();
+  const pf = strings.projectFileControls;
 
   const bpm = useProjectStore((s) => s.bpm);
   const timeSignature = useProjectStore((s) => s.timeSignature);
@@ -65,7 +80,7 @@ export function ProjectFileControls() {
       loadProject(parseProjectFile(text));
       setError(null);
     } catch (err) {
-      setError(err instanceof ProjectFileError ? err.message : '読み込みに失敗しました');
+      setError(err instanceof ProjectFileError ? err.code : 'generic');
     }
   };
 
@@ -75,8 +90,8 @@ export function ProjectFileControls() {
         type="button"
         className="cb-btn"
         onClick={handleSave}
-        title="プロジェクトを保存 (.chrd)"
-        aria-label="プロジェクトを保存"
+        title={t(pf.saveTitle)}
+        aria-label={t(pf.saveAria)}
       >
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
           <path
@@ -100,8 +115,8 @@ export function ProjectFileControls() {
         type="button"
         className="cb-btn"
         onClick={handleOpenClick}
-        title="プロジェクトを開く (.chrd)"
-        aria-label="プロジェクトを開く"
+        title={t(pf.openTitle)}
+        aria-label={t(pf.openAria)}
       >
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
           <path
@@ -123,8 +138,11 @@ export function ProjectFileControls() {
         tabIndex={-1}
       />
       {error && (
-        <span className="pf-controls__error" title={error}>
-          読込失敗
+        <span
+          className="pf-controls__error"
+          title={error === 'generic' ? t(strings.errors.genericLoadFailed) : t(ERROR_MESSAGES[error])}
+        >
+          {t(pf.loadFailedShort)}
         </span>
       )}
     </div>

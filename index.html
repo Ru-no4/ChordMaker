@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ChrodMaker — コード生成 / 判定 / DAW風エディタ</title>
+    <script>
+      (function () {
+        var theme = localStorage.getItem('chordmaker-theme') === 'light' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = theme;
+        var locale = localStorage.getItem('chordmaker-locale') === 'en' ? 'en' : 'ja';
+        document.documentElement.lang = locale;
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

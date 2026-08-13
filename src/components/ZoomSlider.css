@@ -59,14 +59,14 @@
 .zoom-slider__range::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  background: linear-gradient(180deg, #d6dbe2 0%, #9aa3ae 100%);
-  border: 1px solid #1b1f24;
+  background: linear-gradient(180deg, var(--thumb-grad-top) 0%, var(--thumb-grad-bottom) 100%);
+  border: 1px solid var(--thumb-border);
   cursor: pointer;
 }
 
 .zoom-slider__range::-moz-range-thumb {
-  background: linear-gradient(180deg, #d6dbe2 0%, #9aa3ae 100%);
-  border: 1px solid #1b1f24;
+  background: linear-gradient(180deg, var(--thumb-grad-top) 0%, var(--thumb-grad-bottom) 100%);
+  border: 1px solid var(--thumb-border);
   cursor: pointer;
   border-radius: 2px;
 }

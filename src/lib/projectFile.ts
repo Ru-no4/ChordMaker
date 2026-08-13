@@ -60,8 +60,26 @@ export function serializeProject(state: ProjectFileSource): ProjectFile {
   };
 }
 
-/** 読み込み時の最低限の形チェック。壊れたファイルでアプリごと落ちないようにする。 */
-export class ProjectFileError extends Error {}
+export type ProjectFileErrorCode =
+  | 'invalid-json'
+  | 'invalid-format'
+  | 'wrong-app'
+  | 'unsupported-version'
+  | 'corrupt-blocks'
+  | 'corrupt-time-signature'
+  | 'corrupt-settings';
+
+/**
+ * 読み込み時の最低限の形チェック。壊れたファイルでアプリごと落ちないようにする。
+ * メッセージは持たず code だけを持つ（表示側で locale に応じたメッセージへ変換する）。
+ */
+export class ProjectFileError extends Error {
+  code: ProjectFileErrorCode;
+  constructor(code: ProjectFileErrorCode) {
+    super(code);
+    this.code = code;
+  }
+}
 
 function isNoteItem(v: unknown): v is ChordBlockItem['notes'][number] {
   if (!v || typeof v !== 'object') return false;
@@ -92,24 +110,24 @@ export function parseProjectFile(text: string): ProjectFile {
   try {
     raw = JSON.parse(text);
   } catch {
-    throw new ProjectFileError('JSON として読み込めませんでした');
+    throw new ProjectFileError('invalid-json');
   }
   if (!raw || typeof raw !== 'object') {
-    throw new ProjectFileError('ファイルの形式が不正です');
+    throw new ProjectFileError('invalid-format');
   }
   const f = raw as Record<string, unknown>;
   if (f.app !== 'ChrodMaker') {
-    throw new ProjectFileError('ChrodMaker のプロジェクトファイルではありません');
+    throw new ProjectFileError('wrong-app');
   }
   if (typeof f.formatVersion !== 'number' || f.formatVersion > CURRENT_VERSION) {
-    throw new ProjectFileError('対応していないバージョンのファイルです');
+    throw new ProjectFileError('unsupported-version');
   }
   if (!Array.isArray(f.blocks) || !f.blocks.every(isBlock)) {
-    throw new ProjectFileError('コードトラックのデータが壊れています');
+    throw new ProjectFileError('corrupt-blocks');
   }
   const sig = f.timeSignature as Partial<TimeSignature> | undefined;
   if (!sig || typeof sig.numerator !== 'number' || typeof sig.denominator !== 'number') {
-    throw new ProjectFileError('拍子のデータが壊れています');
+    throw new ProjectFileError('corrupt-time-signature');
   }
   if (
     typeof f.bpm !== 'number' ||
@@ -120,7 +138,7 @@ export function parseProjectFile(text: string): ProjectFile {
     typeof f.instrumentId !== 'string' ||
     typeof f.volumeDb !== 'number'
   ) {
-    throw new ProjectFileError('設定のデータが壊れています');
+    throw new ProjectFileError('corrupt-settings');
   }
 
   return {

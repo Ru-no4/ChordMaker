@@ -21,6 +21,8 @@ import { usePlayheadFollow } from '../hooks/usePlayheadFollow';
 import { ChordBlock } from './ChordBlock';
 import { Playhead } from './Playhead';
 import { ZoomSlider } from './ZoomSlider';
+import { useT } from '../i18n/useT';
+import { strings } from '../i18n/strings';
 import './ChordTimeline.css';
 
 /** 鍵盤幅と揃えた左ガター幅 */
@@ -53,6 +55,8 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
   const zoomXBy = useProjectStore((s) => s.zoomXBy);
   const zoomYBy = useProjectStore((s) => s.zoomYBy);
   const setZoomX = useProjectStore((s) => s.setZoomX);
+  const { t } = useT();
+  const ct = strings.chordTimeline;
 
   const { ref, onScroll } = useSyncedScroll<HTMLDivElement>();
   const panRef = useRef<{ originX: number; scrollLeft: number } | null>(null);
@@ -304,7 +308,7 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
   );
 
   return (
-    <section className="timeline" aria-label="コードタイムライン">
+    <section className="timeline" aria-label={t(ct.ariaLabel)}>
       <div className="timeline__scroll" ref={ref} onScroll={onScroll} onWheel={onWheel}>
         <div className="timeline__inner" style={{ width: GUTTER_WIDTH + laneWidth }}>
           {/* ---- ルーラー ---- */}
@@ -356,7 +360,7 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
                 onPointerUp={onRangeStartUp}
                 onPointerCancel={onRangeStartUp}
                 onLostPointerCapture={onRangeStartUp}
-                title="ドラッグして再生範囲の開始位置を変更"
+                title={t(ct.rangeStartHandleTitle)}
               />
               <div
                 className={`ruler__range-handle ruler__range-handle--end ${rangeValid ? '' : 'is-invalid'}`}
@@ -366,7 +370,7 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
                 onPointerUp={onRangeEndUp}
                 onPointerCancel={onRangeEndUp}
                 onLostPointerCapture={onRangeEndUp}
-                title="ドラッグして再生範囲の終了位置を変更"
+                title={t(ct.rangeEndHandleTitle)}
               />
             </div>
           </div>
@@ -377,10 +381,10 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
               <span className="timeline__gutter-label">CHORD TRACK</span>
               <span className="timeline__gutter-hint">
                 {editorTool === 'draw'
-                  ? 'タップで追加'
+                  ? t(ct.tapToAdd)
                   : editorTool === 'erase'
-                    ? 'タップで削除'
-                    : '　'}
+                    ? t(ct.tapToDelete)
+                    : ' '}
               </span>
             </div>
             <div
@@ -424,7 +428,7 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
           min={ZOOM_X_MIN}
           max={ZOOM_X_MAX}
           onChange={setZoomX}
-          ariaLabel="コードトラックの横幅表示倍率"
+          ariaLabel={t(ct.zoomAria)}
         />
       </div>
     </section>

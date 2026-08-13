@@ -5,6 +5,8 @@ import { blockHeight, chordResolutionSteps, laneHeight as laneHeightOf, snapStep
 import { capturePointer, isTap, releasePointer } from '../lib/pointer';
 import { segmentsFor, type ChordSegment as ChordSegmentData } from '../lib/segmentation';
 import { ChordSegment } from './ChordSegment';
+import { useT } from '../i18n/useT';
+import { strings } from '../i18n/strings';
 
 type DragMode = 'move' | 'resize-left' | 'resize-right';
 
@@ -86,6 +88,8 @@ export function ChordBlock({ block, stepW, zoomY, selected }: ChordBlockProps) {
   const duplicateNotesToNearestGap = useProjectStore((s) => s.duplicateNotesToNearestGap);
 
   const dragRef = useRef<Drag | null>(null);
+  const { t } = useT();
+  const cbk = strings.chordBlock;
 
   const segments = useMemo(
     () => segmentsFor(block, chordResolutionSteps(timeSignature, chordResolution)),
@@ -337,7 +341,7 @@ export function ChordBlock({ block, stepW, zoomY, selected }: ChordBlockProps) {
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onLostPointerCapture={onPointerUp}
-        aria-label="長さ変更（左）"
+        aria-label={t(cbk.resizeLeftAria)}
       />
       <div
         className="chord-block__handle chord-block__handle--right"
@@ -346,7 +350,7 @@ export function ChordBlock({ block, stepW, zoomY, selected }: ChordBlockProps) {
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onLostPointerCapture={onPointerUp}
-        aria-label="長さ変更（右）"
+        aria-label={t(cbk.resizeRightAria)}
       />
     </div>
   );

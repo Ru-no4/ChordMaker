@@ -1,11 +1,13 @@
 import { useMemo } from 'react';
 import { useProjectStore, type ChordBlockItem } from '../store/useProjectStore';
 import { chordResolutionSteps } from '../lib/grid';
-import { candidateToMidi, midiToName, pitchClass } from '../lib/theory';
+import { candidateToMidi, formatIntervalName, midiToName, pitchClass } from '../lib/theory';
 import { CATEGORY_ORDER, CATEGORY_STYLES, styleFor } from '../lib/colors';
 import { segmentAt, segmentsFor, type ChordSegment } from '../lib/segmentation';
 import { useActiveSegmentStart } from '../hooks/useActiveSegment';
 import { VOICING_PRESETS, buildVoicing, voiceLeadMidis } from '../lib/voicing';
+import { useT } from '../i18n/useT';
+import { strings } from '../i18n/strings';
 import './ChordInspector.css';
 
 /**
@@ -51,6 +53,8 @@ export function ChordInspector({ onPreview }: ChordInspectorProps) {
   const setSegmentNotes = useProjectStore((s) => s.setSegmentNotes);
   const applyBulkSegmentNotes = useProjectStore((s) => s.applyBulkSegmentNotes);
   const clearBlockSelection = useProjectStore((s) => s.clearBlockSelection);
+  const { t, locale } = useT();
+  const ci = strings.chordInspector;
 
   const selected = blocks.find((b) => b.id === selectedBlockId) ?? null;
   const resolutionSteps = chordResolutionSteps(timeSignature, chordResolution);
@@ -106,22 +110,26 @@ export function ChordInspector({ onPreview }: ChordInspectorProps) {
 
     return (
       <div className="inspector inspector--multi">
-        <span className="inspector__label">{selectedBlockIds.length}個選択中</span>
+        <span className="inspector__label">
+          {locale === 'ja'
+            ? `${selectedBlockIds.length}個選択中`
+            : `${selectedBlockIds.length} selected`}
+        </span>
         <div className="chip-row">
           <button
             type="button"
             className="chip"
             disabled={selectedBlockIds.length < 2}
-            title="先頭のコードは据え置き、以降を順に前のコードへ近いオクターブで合わせる（声部の移動を抑える）"
+            title={t(ci.chainVoiceLeadTitle)}
             onClick={handleChainVoiceLead}
           >
-            ボイシングをつなげる
+            {t(ci.chainVoiceLead)}
           </button>
           <button type="button" className="chip" onClick={clearBlockSelection}>
-            選択解除
+            {t(ci.clearSelection)}
           </button>
         </div>
-        <span className="inspector__hint">Shift+クリック、または範囲選択ツールのドラッグで選び直せます</span>
+        <span className="inspector__hint">{t(ci.reselectHint)}</span>
       </div>
     );
   }
@@ -129,7 +137,7 @@ export function ChordInspector({ onPreview }: ChordInspectorProps) {
   if (!selected || !segment) {
     return (
       <div className="inspector inspector--legend">
-        <span className="inspector__title">コードタイプ</span>
+        <span className="inspector__title">{t(ci.chordTypeTitle)}</span>
         <div className="inspector__legend">
           {CATEGORY_ORDER.map((cat) => (
             <span key={cat} className="legend-item">
@@ -144,9 +152,7 @@ export function ChordInspector({ onPreview }: ChordInspectorProps) {
             </span>
           ))}
         </div>
-        <span className="inspector__hint">
-          コードブロックをクリックすると判定結果を表示します
-        </span>
+        <span className="inspector__hint">{t(ci.clickHint)}</span>
       </div>
     );
   }
@@ -159,7 +165,7 @@ export function ChordInspector({ onPreview }: ChordInspectorProps) {
       {/* ---- セグメント切替（小節内に複数コードがある場合） ---- */}
       {segments.length > 1 && (
         <div className="inspector__section">
-          <span className="inspector__label">小節内のコード</span>
+          <span className="inspector__label">{t(ci.chordsInBar)}</span>
           <div className="chip-row">
             {segments.map((seg, i) => {
               const sstyle = styleFor(seg.detection.chord?.category ?? null);
@@ -184,12 +190,12 @@ export function ChordInspector({ onPreview }: ChordInspectorProps) {
 
       {/* ---- 判定結果 ---- */}
       <div className="inspector__main" style={{ borderColor: style.accent }}>
-        <span className="inspector__label">DETECTED</span>
+        <span className="inspector__label">{t(ci.detected)}</span>
         <span className="inspector__symbol" style={{ color: style.accent }}>
           {detection.kind === 'chord'
             ? detection.chord!.symbol
             : detection.kind === 'candidates'
-              ? '判定中'
+              ? t(ci.detecting)
               : '—'}
         </span>
         {detection.kind === 'chord' && (
@@ -201,33 +207,35 @@ export function ChordInspector({ onPreview }: ChordInspectorProps) {
 
       {/* ---- 構成音 ---- */}
       <div className="inspector__section">
-        <span className="inspector__label">構成音</span>
+        <span className="inspector__label">{t(ci.notes)}</span>
         <span className="inspector__notes">
           {detection.notes.length > 0
             ? detection.notes.map(midiToName).join('  ')
-            : '未入力'}
+            : t(ci.notEntered)}
         </span>
         {detection.kind === 'chord' && (
           <span className="inspector__degrees">
             {detection.chord!.degrees.join(' · ')}
           </span>
         )}
-        {detection.intervalName && (
-          <span className="inspector__degrees">{detection.intervalName}</span>
+        {detection.intervalSemitones !== null && (
+          <span className="inspector__degrees">
+            {formatIntervalName(detection.intervalSemitones, locale)}
+          </span>
         )}
       </div>
 
       {/* ---- ボイシング ---- */}
       {detection.kind === 'chord' && (
         <div className="inspector__section">
-          <span className="inspector__label">ボイシング</span>
+          <span className="inspector__label">{t(ci.voicing)}</span>
           <div className="chip-row">
             {VOICING_PRESETS.map((p) => (
               <button
                 key={p.id}
                 type="button"
                 className="chip"
-                title={p.title}
+                title={t(p.title)}
                 onClick={() => {
                   const pcs = [...new Set(segment.midis.map(pitchClass))];
                   const midis = buildVoicing(
@@ -240,18 +248,14 @@ export function ChordInspector({ onPreview }: ChordInspectorProps) {
                   onPreview(midis);
                 }}
               >
-                {p.label}
+                {t(p.label)}
               </button>
             ))}
             <button
               type="button"
               className="chip"
               disabled={precedingMidis.length === 0}
-              title={
-                precedingMidis.length === 0
-                  ? '直前にコードがありません'
-                  : '直前のコードの実音に近いオクターブへ各音を配置する'
-              }
+              title={precedingMidis.length === 0 ? t(ci.noPrecedingChord) : t(ci.voiceLeadTitle)}
               onClick={() => {
                 const pcs = [...new Set(segment.midis.map(pitchClass))];
                 const midis = voiceLeadMidis(pcs, precedingMidis);
@@ -269,7 +273,7 @@ export function ChordInspector({ onPreview }: ChordInspectorProps) {
       {/* ---- 候補提示（単音・2音） ---- */}
       {detection.kind === 'candidates' && detection.candidates.length > 0 && (
         <div className="inspector__section inspector__section--grow">
-          <span className="inspector__label">候補（クリックで確定）</span>
+          <span className="inspector__label">{t(ci.candidates)}</span>
           <div className="chip-row">
             {detection.candidates.map((c) => {
               const cstyle = styleFor(c.category);
@@ -284,7 +288,11 @@ export function ChordInspector({ onPreview }: ChordInspectorProps) {
                     setSegmentNotes(selected.id, segment.start, segment.length, midis);
                     onPreview(midis);
                   }}
-                  title={`+${c.missing.length} 音を補完`}
+                  title={
+                    locale === 'ja'
+                      ? `+${c.missing.length} 音を補完`
+                      : `completes ${c.missing.length} note${c.missing.length === 1 ? '' : 's'}`
+                  }
                 >
                   <span className="chip__symbol">{c.symbol}</span>
                   {c.missing.length > 0 && (
@@ -300,7 +308,7 @@ export function ChordInspector({ onPreview }: ChordInspectorProps) {
       {/* ---- 別解釈 ---- */}
       {detection.kind === 'chord' && detection.alternatives.length > 0 && (
         <div className="inspector__section inspector__section--grow">
-          <span className="inspector__label">別解釈</span>
+          <span className="inspector__label">{t(ci.alternatives)}</span>
           <div className="chip-row">
             {detection.alternatives.map((alt) => {
               const astyle = styleFor(alt.category);
@@ -324,7 +332,7 @@ export function ChordInspector({ onPreview }: ChordInspectorProps) {
         disabled={segment.midis.length === 0}
         onClick={() => onPreview(segment.midis)}
       >
-        ♪ 試聴
+        {t(ci.preview)}
       </button>
     </div>
   );

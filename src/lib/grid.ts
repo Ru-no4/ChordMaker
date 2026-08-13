@@ -108,13 +108,13 @@ export const quantizeSteps = (q: QuantizeValue): number => STEPS_PER_WHOLE / q;
 export const CHORD_DIVISIONS = [1, 2, 3, 4, 6, 8] as const;
 export type ChordResolution = (typeof CHORD_DIVISIONS)[number];
 
-export const CHORD_RESOLUTION_LABELS: Record<number, string> = {
-  1: '小節',
-  2: '1/2',
-  3: '1/3',
-  4: '1/4',
-  6: '1/6',
-  8: '1/8',
+export const CHORD_RESOLUTION_LABELS: Record<number, { ja: string; en: string }> = {
+  1: { ja: '小節', en: 'Bar' },
+  2: { ja: '1/2', en: '1/2' },
+  3: { ja: '1/3', en: '1/3' },
+  4: { ja: '1/4', en: '1/4' },
+  6: { ja: '1/6', en: '1/6' },
+  8: { ja: '1/8', en: '1/8' },
 };
 
 /** コード解像度 → 窓の長さ(step)。割り切れない場合は小数のまま扱う。 */
