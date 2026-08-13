@@ -10,6 +10,7 @@ import {
 } from '../lib/projectFile';
 import { useT } from '../i18n/useT';
 import { strings } from '../i18n/strings';
+import { ConfirmDialog } from './ConfirmDialog';
 import './ProjectFileControls.css';
 
 const ERROR_MESSAGES: Record<ProjectFileErrorCode, { ja: string; en: string }> = {
@@ -49,6 +50,10 @@ export function ProjectFileControls() {
   const volumeDb = useProjectStore((s) => s.volumeDb);
   const blocks = useProjectStore((s) => s.blocks);
   const loadProject = useProjectStore((s) => s.loadProject);
+  const clearAll = useProjectStore((s) => s.clearAll);
+  const resetToDefault = useProjectStore((s) => s.resetToDefault);
+
+  const [confirmAction, setConfirmAction] = useState<'clear' | 'reset' | null>(null);
 
   const handleSave = () => {
     const file = serializeProject({
@@ -83,6 +88,19 @@ export function ProjectFileControls() {
       setError(err instanceof ProjectFileError ? err.code : 'generic');
     }
   };
+
+  const runConfirmedAction = () => {
+    if (confirmAction === 'clear') clearAll();
+    else if (confirmAction === 'reset') resetToDefault();
+    setConfirmAction(null);
+  };
+
+  const handleSaveThenConfirm = () => {
+    handleSave();
+    runConfirmedAction();
+  };
+
+  const cd = strings.confirmDialog;
 
   return (
     <div className="cb-transport pf-controls">
@@ -128,6 +146,57 @@ export function ProjectFileControls() {
           />
         </svg>
       </button>
+      <button
+        type="button"
+        className="cb-btn"
+        onClick={() => setConfirmAction('clear')}
+        title={t(pf.clearAllTitle)}
+        aria-label={t(pf.clearAllAria)}
+      >
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+          <path
+            d="M3 4.5h10M6.3 4.5V3a.8.8 0 0 1 .8-.8h1.8a.8.8 0 0 1 .8.8v1.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M4.4 4.5l.6 8.1a1 1 0 0 0 1 .9h4a1 1 0 0 0 1-.9l.6-8.1"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+      <button
+        type="button"
+        className="cb-btn"
+        onClick={() => setConfirmAction('reset')}
+        title={t(pf.resetTitle)}
+        aria-label={t(pf.resetAria)}
+      >
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+          <path
+            d="M12.6 8A4.6 4.6 0 1 1 10.8 4.3"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          />
+          <path
+            d="M10.6 2.1 11 4.6l-2.5.4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
       <input
         ref={inputRef}
         type="file"
@@ -144,6 +213,16 @@ export function ProjectFileControls() {
         >
           {t(pf.loadFailedShort)}
         </span>
+      )}
+
+      {confirmAction && (
+        <ConfirmDialog
+          title={t(confirmAction === 'clear' ? cd.clearAllTitle : cd.resetTitle)}
+          message={t(confirmAction === 'clear' ? cd.clearAllMessage : cd.resetMessage)}
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={runConfirmedAction}
+          onSaveThenConfirm={handleSaveThenConfirm}
+        />
       )}
     </div>
   );

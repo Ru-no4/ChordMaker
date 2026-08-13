@@ -56,7 +56,14 @@ export function useTransport() {
 
   /* --- 音源の読み込み --- */
   useEffect(() => {
-    if (audioEngine.currentInstrumentId === instrumentId) return;
+    if (audioEngine.currentInstrumentId === instrumentId) {
+      // StrictMode の開発時二重実行では、直前の呼び出しが同期的に
+      // audioEngine.instrumentId を更新済みのままここへ来ることがある。
+      // その場合の .then() は cleanup で握りつぶされて呼ばれないため、
+      // ここで明示的に読み込み中フラグを下ろしておかないと固まったままになる。
+      setInstrumentStatus(false);
+      return;
+    }
 
     let cancelled = false;
     setInstrumentStatus(true);

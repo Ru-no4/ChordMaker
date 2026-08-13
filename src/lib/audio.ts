@@ -14,7 +14,13 @@
 import * as Tone from 'tone';
 import { Soundfont, SplendidGrandPiano } from 'smplr';
 import type { TimeSignature } from './grid';
-import { DEFAULT_SYNTH_OPTIONS, SPLENDID_ID, SYNTH_ID, findInstrument } from './instruments';
+import {
+  DEFAULT_INSTRUMENT_ID,
+  DEFAULT_SYNTH_OPTIONS,
+  SPLENDID_ID,
+  SYNTH_ID,
+  findInstrument,
+} from './instruments';
 
 export interface ScheduledNote {
   midi: number;
@@ -143,7 +149,7 @@ class AudioEngine {
   private synthTargetCalibrated = false;
 
   private sampled: SampledInstrument | null = null;
-  private instrumentId: string = SYNTH_ID;
+  private instrumentId: string = DEFAULT_INSTRUMENT_ID;
   /** 読み込み完了前に別の音色へ切り替えられたかの判定に使う */
   private loadToken = 0;
 

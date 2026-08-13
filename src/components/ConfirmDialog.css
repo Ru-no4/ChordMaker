@@ -1,0 +1,54 @@
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--modal-backdrop);
+  backdrop-filter: blur(2px);
+}
+
+.confirm-panel {
+  position: relative;
+  width: min(420px, 100%);
+  padding: 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+
+.confirm-panel__title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+
+.confirm-panel__message {
+  margin: 0 0 18px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+.confirm-panel__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-panel__danger {
+  border-color: var(--playhead);
+  color: var(--playhead);
+}
+
+.confirm-panel__danger:hover {
+  background: color-mix(in srgb, var(--playhead) 16%, transparent);
+}

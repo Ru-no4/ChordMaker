@@ -115,6 +115,26 @@ export const strings = {
     openTitle: { ja: 'プロジェクトを開く (.chrd)', en: 'Open project (.chrd)' },
     openAria: { ja: 'プロジェクトを開く', en: 'Open project' },
     loadFailedShort: { ja: '読込失敗', en: 'Load failed' },
+    clearAllTitle: { ja: '全削除', en: 'Clear all' },
+    clearAllAria: { ja: 'すべてのコードを削除', en: 'Delete every chord' },
+    resetTitle: { ja: '初期化', en: 'Reset' },
+    resetAria: { ja: 'デフォルトのコード進行に戻す', en: 'Reset to the default chord progression' },
+  },
+
+  confirmDialog: {
+    clearAllTitle: { ja: '全削除しますか？', en: 'Clear everything?' },
+    clearAllMessage: {
+      ja: '配置されているコードがすべて削除されます。',
+      en: 'Every placed chord will be deleted.',
+    },
+    resetTitle: { ja: '初期化しますか？', en: 'Reset to default?' },
+    resetMessage: {
+      ja: 'コード進行と設定が、起動時のデフォルトへ戻ります。',
+      en: 'The chord progression and settings will be reset to the startup defaults.',
+    },
+    cancel: { ja: 'キャンセル', en: 'Cancel' },
+    ok: { ja: '保存せず実行', en: 'Proceed without saving' },
+    saveThenOk: { ja: '保存してから実行 (.chrd)', en: 'Save, then proceed (.chrd)' },
   },
 
   instrumentSelect: {

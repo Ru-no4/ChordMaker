@@ -13,6 +13,7 @@ import {
   type TimeSignature,
 } from '../lib/grid';
 import { DEFAULT_INSTRUMENT_ID } from '../lib/instruments';
+import { loadAutosave, saveAutosave } from '../lib/autosave';
 import type { ProjectFile } from '../lib/projectFile';
 
 /* ------------------------------------------------------------------ */
@@ -79,6 +80,10 @@ const nextId = (prefix: string): string => `${prefix}-${Date.now().toString(36)}
 
 const DEFAULT_SIG: TimeSignature = { numerator: 4, denominator: 4 };
 const DEFAULT_BARS = 4;
+const DEFAULT_BPM = 160;
+const DEFAULT_QUANTIZE: QuantizeValue = 16;
+const DEFAULT_CHORD_RESOLUTION: ChordResolution = 4;
+const DEFAULT_VOLUME_DB = -30;
 /** 「小節数」入力の安全な上限（意味のある業務的な上限ではなく、暴走防止のための値） */
 const BARS_MAX = 512;
 
@@ -294,6 +299,8 @@ interface ProjectState {
 
   clearAll: () => void;
   loadProject: (file: ProjectFile) => void;
+  /** 起動時の既定コード進行・設定へ戻す（内容の全削除とは異なり、初期状態そのものに戻す） */
+  resetToDefault: () => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -406,6 +413,10 @@ function commonDelta(
   return clamp(desired, lo, hi);
 }
 
+// タブを閉じるまでの間だけ、リロードしても直前のプロジェクトへ戻れるようにする。
+// 壊れている・保存が無ければ null のままで、以下の各項目が既定値にフォールバックする。
+const autosaved = loadAutosave();
+
 export const useProjectStore = create<ProjectState>((set, get) => {
   /** 単発の操作を1つの履歴としてまとめる */
   const transact = (mutate: () => void) => {
@@ -415,22 +426,22 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   };
 
   return {
-  bpm: 160,
-  timeSignature: DEFAULT_SIG,
-  bars: DEFAULT_BARS,
-  rangeStart: 0,
+  bpm: autosaved?.bpm ?? DEFAULT_BPM,
+  timeSignature: autosaved?.timeSignature ?? DEFAULT_SIG,
+  bars: autosaved?.bars ?? DEFAULT_BARS,
+  rangeStart: autosaved?.rangeStart ?? 0,
   loop: true,
-  quantize: 16,
-  snap: true,
-  volumeDb: -12,
+  quantize: autosaved?.quantize ?? DEFAULT_QUANTIZE,
+  snap: autosaved?.snap ?? true,
+  volumeDb: autosaved?.volumeDb ?? DEFAULT_VOLUME_DB,
 
-  chordResolution: 4,
+  chordResolution: autosaved?.chordResolution ?? DEFAULT_CHORD_RESOLUTION,
   editorTool: 'draw',
   zoomX: 0.5,
   zoomY: 0.8, // ZOOM_FACTOR 1段階分ズームアウトした状態を初期表示にする
   followPlayhead: true,
 
-  instrumentId: DEFAULT_INSTRUMENT_ID,
+  instrumentId: autosaved?.instrumentId ?? DEFAULT_INSTRUMENT_ID,
   instrumentLoading: false,
   instrumentError: false,
 
@@ -441,7 +452,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
 
   isPlaying: false,
 
-  blocks: seedBlocks(),
+  blocks: autosaved?.blocks ?? seedBlocks(),
   selectedBlockId: null,
   selectedBlockIds: [],
   selectedNoteIds: [],
@@ -1118,6 +1129,28 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       }),
     ),
 
+  /** 起動時の既定コード進行・設定へ戻す（clearAll と違い、内容だけでなく設定も既定値に戻る） */
+  resetToDefault: () =>
+    transact(() =>
+      set({
+        blocks: seedBlocks(),
+        bars: DEFAULT_BARS,
+        rangeStart: 0,
+        timeSignature: DEFAULT_SIG,
+        bpm: DEFAULT_BPM,
+        chordResolution: DEFAULT_CHORD_RESOLUTION,
+        quantize: DEFAULT_QUANTIZE,
+        snap: true,
+        instrumentId: DEFAULT_INSTRUMENT_ID,
+        volumeDb: DEFAULT_VOLUME_DB,
+        selectedBlockId: null,
+        selectedBlockIds: [],
+        selectedNoteIds: [],
+        selectedSegmentStart: null,
+        clipboard: null,
+      }),
+    ),
+
   /* --- 履歴 --- */
   beginTransaction: () =>
     set((s) =>
@@ -1168,6 +1201,30 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       };
     }),
   };
+});
+
+/**
+ * タブを開いている間、内容が変わるたびに自動保存する（デバウンスして頻度を抑える）。
+ * 書き込むのは「作品」に相当する項目だけで、選択状態や表示倍率などは含めない
+ * （そこまで戻す必要は無く、むしろ再読込のたびに選択が残っていると不自然なため）。
+ */
+let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+useProjectStore.subscribe((state) => {
+  if (autosaveTimer !== null) clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(() => {
+    saveAutosave({
+      bpm: state.bpm,
+      timeSignature: state.timeSignature,
+      bars: state.bars,
+      rangeStart: state.rangeStart,
+      chordResolution: state.chordResolution,
+      quantize: state.quantize,
+      snap: state.snap,
+      instrumentId: state.instrumentId,
+      volumeDb: state.volumeDb,
+      blocks: state.blocks,
+    });
+  }, 400);
 });
 
 /** 再生用に全ブロックのノートを絶対位置へ展開する */

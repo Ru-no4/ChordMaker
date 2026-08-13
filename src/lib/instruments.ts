@@ -230,5 +230,5 @@ export const findInstrument = (id: string): InstrumentPreset | null => BY_ID.get
 export const instrumentLabel = (id: string, locale: 'ja' | 'en'): string =>
   findInstrument(id)?.label[locale] ?? id;
 
-/** 既定はダウンロードなしで鳴る内蔵シンセ */
-export const DEFAULT_INSTRUMENT_ID = SYNTH_ID;
+/** 既定はダウンロードなしで鳴る 8bit スクエア */
+export const DEFAULT_INSTRUMENT_ID = CHIP_SQUARE_ID;
