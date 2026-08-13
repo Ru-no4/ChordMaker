@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 import {
+  CHORD_TRACK_HEIGHT_MAX,
+  CHORD_TRACK_HEIGHT_MIN,
+  DEFAULT_CHORD_TRACK_HEIGHT,
   ZOOM_X_MAX,
   ZOOM_X_MIN,
   ZOOM_Y_MAX,
@@ -107,14 +110,76 @@ function rootLowVoicing(root: number, ...rest: number[]): number[] {
   return [root, ...rest.map((m) => m + 12)];
 }
 
-function seedBlocks(): ChordBlockItem[] {
+interface BlockSpec {
+  start: number;
+  length: number;
+  midis: number[];
+}
+
+/** 既定のコード進行の中身（id を持たないので、既定状態かどうかの比較にも使える） */
+function seedBlockSpecs(): BlockSpec[] {
   const bar = stepsPerBar(DEFAULT_SIG); // 32
   return [
-    makeBlock(bar * 0, bar, rootLowVoicing(44, 48, 51, 55)), // Abmaj7
-    makeBlock(bar * 1, bar, rootLowVoicing(43, 47, 50, 53)), // G7
-    makeBlock(bar * 2, bar, rootLowVoicing(48, 51, 55, 58)), // Cm7
-    makeBlock(bar * 3, bar, rootLowVoicing(51, 49, 55, 58)), // Eb7（下から Eb, C#, G, Bb）
+    { start: bar * 0, length: bar, midis: rootLowVoicing(44, 48, 51, 55) }, // Abmaj7
+    { start: bar * 1, length: bar, midis: rootLowVoicing(43, 47, 50, 53) }, // G7
+    { start: bar * 2, length: bar, midis: rootLowVoicing(48, 51, 55, 58) }, // Cm7
+    { start: bar * 3, length: bar, midis: rootLowVoicing(51, 49, 55, 58) }, // Eb7（下から Eb, C#, G, Bb）
   ];
+}
+
+/** ブロック配置・構成音が既定のコード進行と同じ内容かどうか（id は無視して値だけ見る） */
+function isSeedBlocks(blocks: ChordBlockItem[]): boolean {
+  const specs = seedBlockSpecs();
+  if (blocks.length !== specs.length) return false;
+  return blocks.every((b, i) => {
+    const spec = specs[i];
+    if (b.start !== spec.start || b.length !== spec.length) return false;
+    if (b.notes.length !== spec.midis.length) return false;
+    return b.notes.every(
+      (n, j) => n.midi === spec.midis[j] && n.start === 0 && n.length === spec.length && n.velocity === 0.8,
+    );
+  });
+}
+
+function seedBlocks(): ChordBlockItem[] {
+  return seedBlockSpecs().map(({ start, length, midis }) => makeBlock(start, length, midis));
+}
+
+/**
+ * 起動時の既定状態（設定・コード進行とも）から何も変えていないかどうか。
+ * 全削除・初期化の確認ダイアログを省略してよいかの判定に使う
+ * （まだ何も自分の作業をしていないなら、確認なしで実行してよい）。
+ */
+export function isDefaultProjectState(s: {
+  bpm: number;
+  timeSignature: TimeSignature;
+  bars: number;
+  rangeStart: number;
+  chordResolution: ChordResolution;
+  quantize: QuantizeValue;
+  snap: boolean;
+  instrumentId: string;
+  volumeDb: number;
+  blocks: ChordBlockItem[];
+}): boolean {
+  return (
+    s.bpm === DEFAULT_BPM &&
+    s.timeSignature.numerator === DEFAULT_SIG.numerator &&
+    s.timeSignature.denominator === DEFAULT_SIG.denominator &&
+    s.bars === DEFAULT_BARS &&
+    s.rangeStart === 0 &&
+    s.chordResolution === DEFAULT_CHORD_RESOLUTION &&
+    s.quantize === DEFAULT_QUANTIZE &&
+    s.snap === true &&
+    s.instrumentId === DEFAULT_INSTRUMENT_ID &&
+    s.volumeDb === DEFAULT_VOLUME_DB &&
+    isSeedBlocks(s.blocks)
+  );
+}
+
+/** ノートが1つも配置されていないか（ブロックが無い、または全ブロックが空） */
+export function hasNoNotes(blocks: ChordBlockItem[]): boolean {
+  return blocks.every((b) => b.notes.length === 0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -189,7 +254,12 @@ interface ProjectState {
 
   /* --- 表示倍率 --- */
   zoomX: number;
+  /** ピアノロールの縦方向表示倍率 */
   zoomY: number;
+  /** コードトラックの縦方向表示倍率（ピアノロールとは独立） */
+  chordZoomY: number;
+  /** コードトラックの表示高さ(px)。ズームとは独立に、境界のドラッグで手動調整する */
+  chordTrackHeight: number;
   /** 再生ヘッドを画面中央に追従させる */
   followPlayhead: boolean;
 
@@ -237,10 +307,13 @@ interface ProjectState {
   setEditorTool: (tool: EditorTool) => void;
   setZoomX: (zoom: number) => void;
   setZoomY: (zoom: number) => void;
+  setChordZoomY: (zoom: number) => void;
   /** 現在値に対する相対倍率。連続クリックやホイールでも取りこぼさない。 */
   zoomXBy: (factor: number) => void;
   zoomYBy: (factor: number) => void;
+  chordZoomYBy: (factor: number) => void;
   resetZoom: () => void;
+  setChordTrackHeight: (px: number) => void;
   toggleFollowPlayhead: () => void;
   setInstrument: (id: string) => void;
   setInstrumentStatus: (loading: boolean, error?: boolean) => void;
@@ -444,6 +517,8 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   editorTool: 'draw',
   zoomX: 0.5,
   zoomY: 0.8, // ZOOM_FACTOR 1段階分ズームアウトした状態を初期表示にする
+  chordZoomY: 0.8,
+  chordTrackHeight: DEFAULT_CHORD_TRACK_HEIGHT,
   followPlayhead: true,
 
   instrumentId: autosaved?.instrumentId ?? DEFAULT_INSTRUMENT_ID,
@@ -515,11 +590,16 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   setEditorTool: (editorTool) => set({ editorTool }),
   setZoomX: (zoom) => set({ zoomX: clamp(zoom, ZOOM_X_MIN, ZOOM_X_MAX) }),
   setZoomY: (zoom) => set({ zoomY: clamp(zoom, ZOOM_Y_MIN, ZOOM_Y_MAX) }),
+  setChordZoomY: (zoom) => set({ chordZoomY: clamp(zoom, ZOOM_Y_MIN, ZOOM_Y_MAX) }),
   zoomXBy: (factor) =>
     set((s) => ({ zoomX: clamp(s.zoomX * factor, ZOOM_X_MIN, ZOOM_X_MAX) })),
   zoomYBy: (factor) =>
     set((s) => ({ zoomY: clamp(s.zoomY * factor, ZOOM_Y_MIN, ZOOM_Y_MAX) })),
-  resetZoom: () => set({ zoomX: 0.5, zoomY: 0.8 }),
+  chordZoomYBy: (factor) =>
+    set((s) => ({ chordZoomY: clamp(s.chordZoomY * factor, ZOOM_Y_MIN, ZOOM_Y_MAX) })),
+  resetZoom: () => set({ zoomX: 0.5, zoomY: 0.8, chordZoomY: 0.8 }),
+  setChordTrackHeight: (px) =>
+    set({ chordTrackHeight: clamp(px, CHORD_TRACK_HEIGHT_MIN, CHORD_TRACK_HEIGHT_MAX) }),
   toggleFollowPlayhead: () => set((s) => ({ followPlayhead: !s.followPlayhead })),
   setInstrument: (instrumentId) => set({ instrumentId, instrumentError: false }),
   setInstrumentStatus: (instrumentLoading, instrumentError = false) =>

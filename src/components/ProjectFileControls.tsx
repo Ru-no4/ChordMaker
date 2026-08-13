@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
-import { useProjectStore } from '../store/useProjectStore';
+import { hasNoNotes, isDefaultProjectState, useProjectStore } from '../store/useProjectStore';
 import {
   ProjectFileError,
   downloadProjectFile,
@@ -54,6 +54,23 @@ export function ProjectFileControls() {
   const resetToDefault = useProjectStore((s) => s.resetToDefault);
 
   const [confirmAction, setConfirmAction] = useState<'clear' | 'reset' | null>(null);
+
+  // 既定状態から何も変えていない、またはノートが1つも無いなら、
+  // 失うものが無いので保存確認を挟まず即実行してよい。
+  const skipConfirm =
+    hasNoNotes(blocks) ||
+    isDefaultProjectState({
+      bpm,
+      timeSignature,
+      bars,
+      rangeStart,
+      chordResolution,
+      quantize,
+      snap,
+      instrumentId,
+      volumeDb,
+      blocks,
+    });
 
   const handleSave = () => {
     const file = serializeProject({
@@ -149,7 +166,7 @@ export function ProjectFileControls() {
       <button
         type="button"
         className="cb-btn"
-        onClick={() => setConfirmAction('clear')}
+        onClick={() => (skipConfirm ? clearAll() : setConfirmAction('clear'))}
         title={t(pf.clearAllTitle)}
         aria-label={t(pf.clearAllAria)}
       >
@@ -175,7 +192,7 @@ export function ProjectFileControls() {
       <button
         type="button"
         className="cb-btn"
-        onClick={() => setConfirmAction('reset')}
+        onClick={() => (skipConfirm ? resetToDefault() : setConfirmAction('reset'))}
         title={t(pf.resetTitle)}
         aria-label={t(pf.resetAria)}
       >

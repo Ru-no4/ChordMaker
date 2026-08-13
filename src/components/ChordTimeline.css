@@ -63,6 +63,21 @@
   color: var(--text-faint);
 }
 
+/* ---- 縦ズーム（右端固定。ピアノロールの .pr-vzoom と同じ考え方） ---- */
+.timeline__vzoom {
+  position: sticky;
+  right: 0;
+  z-index: 6;
+  flex: 0 0 auto;
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 0;
+  background: var(--bg-sunken);
+  border-left: 1px solid var(--border);
+}
+
 /* ---- ルーラー ---- */
 .ruler {
   position: relative;
@@ -178,6 +193,8 @@
   background-repeat: repeat;
   user-select: none;
   -webkit-touch-callout: none;
+  /* 縦ズームでブロックがレーンの高さを超えたときにスクロールで見えるようにする */
+  overflow-y: auto;
   /*
    * レーンの空白部分ではブラウザの横スクロールを残す。
    * ブロックのドラッグは .chord-block 側の touch-action: none で拾うので、

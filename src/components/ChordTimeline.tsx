@@ -7,10 +7,11 @@ import {
   ZOOM_FACTOR,
   ZOOM_X_MAX,
   ZOOM_X_MIN,
+  ZOOM_Y_MAX,
+  ZOOM_Y_MIN,
   beatWidth,
   displayBars,
   edgeMarginSteps,
-  laneHeight,
   stepWidth,
   stepsPerBar,
   stepsPerBeat,
@@ -54,10 +55,12 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
   const addBlockAt = useProjectStore((s) => s.addBlockAt);
   const editorTool = useProjectStore((s) => s.editorTool);
   const zoomX = useProjectStore((s) => s.zoomX);
-  const zoomY = useProjectStore((s) => s.zoomY);
+  const chordZoomY = useProjectStore((s) => s.chordZoomY);
+  const chordTrackHeight = useProjectStore((s) => s.chordTrackHeight);
   const zoomXBy = useProjectStore((s) => s.zoomXBy);
-  const zoomYBy = useProjectStore((s) => s.zoomYBy);
+  const chordZoomYBy = useProjectStore((s) => s.chordZoomYBy);
   const setZoomX = useProjectStore((s) => s.setZoomX);
+  const setChordZoomY = useProjectStore((s) => s.setChordZoomY);
   const { t } = useT();
   const ct = strings.chordTimeline;
   const te = strings.timelineEdge;
@@ -92,7 +95,8 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
   const total = totalSteps(timeSignature, shownBars);
   const contentWidth = total * stepW;
   const laneWidth = contentWidth + marginPx * 2;
-  const laneH = laneHeight(zoomY);
+  // 表示高さはズームと独立（境界のドラッグで手動調整する）。ズームは中身のブロックの大きさだけを変える。
+  const laneH = chordTrackHeight;
   const beatsPerBar = timeSignature.numerator;
 
   // 再生ヘッドを中央に保つ。横スクロールは scrollSync でピアノロールにも伝わる。
@@ -310,16 +314,16 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
     [endTransaction],
   );
 
-  /** Ctrl+ホイールで拡大縮小（Shift 併用で縦） */
+  /** Ctrl+ホイールで拡大縮小（Shift 併用で縦＝コードトラック自身のズーム） */
   const onWheel = useCallback(
     (e: ReactWheelEvent<HTMLDivElement>) => {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       const factor = e.deltaY < 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR;
-      if (e.shiftKey) zoomYBy(factor);
+      if (e.shiftKey) chordZoomYBy(factor);
       else zoomXBy(factor);
     },
-    [zoomXBy, zoomYBy],
+    [chordZoomYBy, zoomXBy],
   );
 
   return (
@@ -426,7 +430,8 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
                     key={block.id}
                     block={block}
                     stepW={stepW}
-                    zoomY={zoomY}
+                    zoomY={chordZoomY}
+                    laneH={laneH}
                     selected={block.id === selectedBlockId || selectedBlockIds.includes(block.id)}
                   />
                 ))}
@@ -459,6 +464,19 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
               >
                 +
               </button>
+            </div>
+
+            {/* ---- 縦ズーム（ピアノロールと同様、右端に固定表示） ---- */}
+            <div className="timeline__vzoom">
+              <ZoomSlider
+                orientation="vertical"
+                compact
+                value={chordZoomY}
+                min={ZOOM_Y_MIN}
+                max={ZOOM_Y_MAX}
+                onChange={setChordZoomY}
+                ariaLabel={t(ct.zoomVAria)}
+              />
             </div>
           </div>
 

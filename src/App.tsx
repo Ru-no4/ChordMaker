@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ControlBar } from './components/ControlBar';
 import { ChordInspector } from './components/ChordInspector';
 import { ChordTimeline } from './components/ChordTimeline';
+import { ChordTrackResizeHandle } from './components/ChordTrackResizeHandle';
 import { PianoRoll } from './components/PianoRoll';
 import { ShortcutHelp } from './components/ShortcutHelp';
 import { TOOLS } from './components/ToolStrip';
@@ -178,6 +179,7 @@ export default function App() {
       <ChordInspector onPreview={previewNotes} />
       <main className="workspace">
         <ChordTimeline onSeek={seek} />
+        <ChordTrackResizeHandle />
         <PianoRoll onPreview={previewNote} />
       </main>
 

@@ -10,6 +10,8 @@ interface ZoomSliderProps {
   max: number;
   onChange: (value: number) => void;
   ariaLabel: string;
+  /** 手狭な場所（コードトラックの縦ズームなど）向けに、つまみを一回り小さくする */
+  compact?: boolean;
 }
 
 /** スライダー内部の目盛り解像度（連続値を整数レンジへマッピングする） */
@@ -23,7 +25,15 @@ const STEPS = 1000;
  * よく使う低倍率側の刻みが粗くなりすぎるため（0.25〜4倍の直線配分では
  * 実用域の1倍付近をわずかな移動量で通り過ぎてしまう）。
  */
-export function ZoomSlider({ orientation, value, min, max, onChange, ariaLabel }: ZoomSliderProps) {
+export function ZoomSlider({
+  orientation,
+  value,
+  min,
+  max,
+  onChange,
+  ariaLabel,
+  compact = false,
+}: ZoomSliderProps) {
   const ratio = max / min;
   const toSlider = (v: number) => Math.round((Math.log(v / min) / Math.log(ratio)) * STEPS);
   const fromSlider = (raw: number) => min * Math.pow(ratio, raw / STEPS);
@@ -35,7 +45,11 @@ export function ZoomSlider({ orientation, value, min, max, onChange, ariaLabel }
   );
 
   return (
-    <div className={`zoom-slider zoom-slider--${orientation}`} role="group" aria-label={ariaLabel}>
+    <div
+      className={`zoom-slider zoom-slider--${orientation} ${compact ? 'zoom-slider--compact' : ''}`}
+      role="group"
+      aria-label={ariaLabel}
+    >
       <button
         type="button"
         className="zoom-slider__btn"

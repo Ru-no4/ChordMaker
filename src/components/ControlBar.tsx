@@ -377,7 +377,7 @@ export function ControlBar({
           title={t(cb.localeToggleTitle)}
           aria-label={t(cb.localeToggleAria)}
         >
-          {locale === 'ja' ? 'EN' : 'JA'}
+          {locale === 'ja' ? 'JA' : 'EN'}
         </button>
 
         <button

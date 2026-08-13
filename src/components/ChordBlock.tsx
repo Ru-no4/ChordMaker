@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useProjectStore, type ChordBlockItem, type NoteDragSnapshot } from '../store/useProjectStore';
-import { blockHeight, chordResolutionSteps, laneHeight as laneHeightOf, snapStep } from '../lib/grid';
+import { blockHeight, chordResolutionSteps, snapStep } from '../lib/grid';
 import { capturePointer, isTap, releasePointer } from '../lib/pointer';
 import { segmentsFor, type ChordSegment as ChordSegmentData } from '../lib/segmentation';
 import { ChordSegment } from './ChordSegment';
@@ -14,6 +14,8 @@ interface ChordBlockProps {
   block: ChordBlockItem;
   stepW: number;
   zoomY: number;
+  /** レーンの実表示高さ(px)。ズームとは独立に手動調整できるため、ブロックの中央寄せに使う */
+  laneH: number;
   selected: boolean;
 }
 
@@ -68,7 +70,7 @@ function notesInSegment(notes: ChordBlockItem['notes'], seg: ChordSegmentData) {
  * コードタイムライン上の1ブロック。
  * ブロック自体は「ノートの入れ物」で、コード名と色は中のセグメントが持つ。
  */
-export function ChordBlock({ block, stepW, zoomY, selected }: ChordBlockProps) {
+export function ChordBlock({ block, stepW, zoomY, laneH, selected }: ChordBlockProps) {
   const selectBlock = useProjectStore((s) => s.selectBlock);
   const toggleBlockSelection = useProjectStore((s) => s.toggleBlockSelection);
   const selectSegment = useProjectStore((s) => s.selectSegment);
@@ -307,7 +309,7 @@ export function ChordBlock({ block, stepW, zoomY, selected }: ChordBlockProps) {
       style={{
         left: block.start * stepW,
         width: block.length * stepW,
-        top: (laneHeightOf(zoomY) - height) / 2,
+        top: (laneH - height) / 2,
         height,
       }}
       onPointerDown={onPointerDown('move')}

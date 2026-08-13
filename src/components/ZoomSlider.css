@@ -145,3 +145,22 @@
     height: 22px;
   }
 }
+
+/* 手狭な場所向けの縮小版（コードトラックの縦ズームなど） */
+.zoom-slider--compact .zoom-slider__btn {
+  width: 14px;
+  height: 14px;
+  font-size: 9px;
+}
+
+.zoom-slider--compact.zoom-slider--vertical {
+  gap: 3px;
+}
+
+.zoom-slider--compact.zoom-slider--vertical .zoom-slider__track {
+  height: 26px;
+}
+
+.zoom-slider--compact.zoom-slider--vertical .zoom-slider__range {
+  width: 26px;
+}

@@ -1,0 +1,31 @@
+.chord-track-resize-handle {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 7px;
+  background: var(--bg-raised);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-strong);
+  cursor: row-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.chord-track-resize-handle:hover,
+.chord-track-resize-handle:active {
+  background: var(--accent);
+}
+
+.chord-track-resize-handle__grip {
+  width: 32px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  pointer-events: none;
+}
+
+.chord-track-resize-handle:hover .chord-track-resize-handle__grip,
+.chord-track-resize-handle:active .chord-track-resize-handle__grip {
+  background: var(--accent-text);
+}

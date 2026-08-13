@@ -81,6 +81,7 @@ export const strings = {
     tapToAdd: { ja: 'タップで追加', en: 'Tap to add' },
     tapToDelete: { ja: 'タップで削除', en: 'Tap to delete' },
     zoomAria: { ja: 'コードトラックの横幅表示倍率', en: 'Chord track horizontal zoom' },
+    zoomVAria: { ja: 'コードトラックの縦方向表示倍率', en: 'Chord track vertical zoom' },
   },
 
   /** コードトラック・ピアノロールの両方で使う、端の余白と小節追加ボタン */
@@ -89,6 +90,14 @@ export const strings = {
     addBarAtStartAria: { ja: '先頭に小節を1つ追加', en: 'Add one bar at the start' },
     addBarAtEndTitle: { ja: '末尾に小節を1つ追加', en: 'Add one bar at the end' },
     addBarAtEndAria: { ja: '末尾に小節を1つ追加', en: 'Add one bar at the end' },
+  },
+
+  chordTrackResizeHandle: {
+    title: {
+      ja: 'ドラッグしてコードトラックの高さを調整',
+      en: 'Drag to resize the chord track',
+    },
+    aria: { ja: 'コードトラックの高さを調整', en: 'Resize the chord track' },
   },
 
   chordBlock: {

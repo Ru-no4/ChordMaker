@@ -323,6 +323,11 @@
   pointer-events: none;
 }
 
+/* ライトテーマは同じ濃さだと重く見えるので、非選択ブロックのグレーアウトを2割ほど弱める */
+html[data-theme='light'] .pr-region {
+  background: rgba(0, 0, 0, 0.144);
+}
+
 .pr-region.is-active {
   background: rgba(255, 255, 255, 0.045);
   border-left-color: rgba(255, 255, 255, 0.34);
@@ -394,6 +399,11 @@
 .pr-note--dim {
   opacity: 0.6;
   filter: saturate(0.75);
+}
+
+/* ライトテーマは .pr-region と同様、グレーアウトを2割ほど弱める */
+html[data-theme='light'] .pr-note--dim {
+  opacity: 0.68;
 }
 
 /* 小節を跨いで選んだノートは、控えめ表示でもはっきり見せる */
