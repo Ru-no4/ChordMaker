@@ -334,6 +334,17 @@ html[data-theme='light'] .pr-region {
   border-right-color: rgba(255, 255, 255, 0.34);
 }
 
+/*
+ * ライトテーマは非選択エリアが黒オーバーレイで暗くなる一方、選択中エリアは
+ * 白オーバーレイ4.5%のままだと明るさの差がほぼ付かず、選択範囲が分かりづらい。
+ * 選択中エリアをほぼ白まで明るくし、縁はアクセント色で示して境界も分かるようにする。
+ */
+html[data-theme='light'] .pr-region.is-active {
+  background: rgba(255, 255, 255, 0.15);
+  border-left-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  border-right-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
 /* 選択ブロック内のコードの切れ目。上のコードトラックのセル境界と位置が揃う。 */
 .pr-seg-divider {
   position: absolute;
