@@ -1,13 +1,23 @@
 .timeline {
+  --ruler-height: 26px;
   position: relative;
   flex: 0 0 auto;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border-strong);
 }
 
+/* ---- スクロール領域＋縦ズームカラムの横並び（ピアノロールの .pr-main と同じ考え方） ---- */
+.timeline__viewport {
+  display: flex;
+  align-items: stretch;
+}
+
 .timeline__scroll {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow-x: auto;
-  overflow-y: hidden;
+  /* 将来トラックが複数段になったときのために、縦スクロールの余地も残しておく */
+  overflow-y: auto;
 }
 
 .timeline__inner {
@@ -21,7 +31,7 @@
 }
 
 .timeline__row--ruler {
-  height: 26px;
+  height: var(--ruler-height);
 }
 
 /* 高さは表示倍率に応じて JSX 側から指定する */
@@ -63,19 +73,35 @@
   color: var(--text-faint);
 }
 
-/* ---- 縦ズーム（右端固定。ピアノロールの .pr-vzoom と同じ考え方） ---- */
-.timeline__vzoom {
-  position: sticky;
-  right: 0;
-  z-index: 6;
+/*
+ * ---- 縦ズーム（右端固定。ピアノロールの .pr-vzoom と同じ考え方） ----
+ * .timeline__scroll の外側の専用カラムに置くことで、水平スクロール幅の
+ * 計算に巻き込まれず、スクロールしても常に右端に留まる
+ * （sticky ではなく、スクロール領域そのものの外に出すことで実現している）。
+ */
+.timeline__vzoomcol {
   flex: 0 0 auto;
   width: 24px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-sunken);
+  border-left: 1px solid var(--border);
+}
+
+/* ルーラー行ぶんの空白。縦ズーム本体をコードトラック行と縦位置を揃える */
+.timeline__vzoomcol-spacer {
+  flex: 0 0 auto;
+  height: var(--ruler-height);
+  border-bottom: 1px solid var(--border);
+}
+
+.timeline__vzoom {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 4px 0;
-  background: var(--bg-sunken);
-  border-left: 1px solid var(--border);
+  box-sizing: border-box;
 }
 
 /* ---- ルーラー ---- */

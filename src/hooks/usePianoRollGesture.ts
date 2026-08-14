@@ -18,6 +18,7 @@ import type {
   RefObject,
 } from 'react';
 import {
+  selectActiveTrackBlocks,
   useProjectStore,
   type ChordBlockItem,
   type NoteDragSnapshot,
@@ -202,7 +203,7 @@ export function usePianoRollGesture({
       const hiMidi = Math.max(midiA, midiB);
 
       const ids: string[] = [];
-      for (const b of store.blocks) {
+      for (const b of selectActiveTrackBlocks(store)) {
         for (const n of b.notes) {
           const s = b.start + n.start;
           if (s < hitEnd && s + n.length > hitStart && n.midi >= loMidi && n.midi <= hiMidi) {
@@ -233,7 +234,11 @@ export function usePianoRollGesture({
       for (let i = 1; i <= samples; i++) {
         const px = g.lastX + (dx * i) / samples;
         const py = g.lastY + (dy * i) / samples;
-        const hit = noteAtPoint(store.blocks, (px - marginPx) / stepW, midiFromY(py, zoomY));
+        const hit = noteAtPoint(
+          selectActiveTrackBlocks(store),
+          (px - marginPx) / stepW,
+          midiFromY(py, zoomY),
+        );
         if (hit && !g.hot.has(hit.id)) {
           g.hot.add(hit.id);
           added = true;
@@ -350,7 +355,9 @@ export function usePianoRollGesture({
   /* --------------------------------------------------------------- */
 
   const snapshotSelection = useCallback((): NoteDragSnapshot[] => {
-    const { blocks, selectedNoteIds } = useProjectStore.getState();
+    const state = useProjectStore.getState();
+    const { selectedNoteIds } = state;
+    const blocks = selectActiveTrackBlocks(state);
     const wanted = new Set(selectedNoteIds);
     return blocks.flatMap((b) =>
       b.notes
@@ -390,7 +397,8 @@ export function usePianoRollGesture({
       capturePointer(grid, e.pointerId);
 
       const store = useProjectStore.getState();
-      const { editorTool, blocks, quantize, snap } = store;
+      const { editorTool, quantize, snap } = store;
+      const blocks = selectActiveTrackBlocks(store);
       const scroller = scrollRef.current;
 
       const { x, y } = localPoint(e.clientX, e.clientY);
@@ -503,7 +511,7 @@ export function usePianoRollGesture({
           store.clearNoteSelection();
           return;
         }
-        if (targetBlock.id !== store.selectedBlockId) store.selectBlock(targetBlock.id);
+        if (targetBlock.id !== store.selectedBlockId) store.selectBlock(store.activeTrackId, targetBlock.id);
 
         // 配置とそれに続く長さ調整をまとめて1回の Undo にする
         openTransaction();
@@ -517,7 +525,7 @@ export function usePianoRollGesture({
         onPreview(midi);
 
         // そのままドラッグすると長さを決められる（DAW の鉛筆と同じ）
-        const created = findNote(useProjectStore.getState().blocks, newId);
+        const created = findNote(selectActiveTrackBlocks(useProjectStore.getState()), newId);
         if (!created) {
           closeTransaction();
           return;
@@ -636,7 +644,11 @@ export function usePianoRollGesture({
     (e: ReactMouseEvent<HTMLDivElement>): boolean => {
       const { x, y } = localPoint(e.clientX, e.clientY);
       const store = useProjectStore.getState();
-      const hit = noteAtPoint(store.blocks, (x - marginPx) / stepW, midiFromY(y, zoomY));
+      const hit = noteAtPoint(
+        selectActiveTrackBlocks(store),
+        (x - marginPx) / stepW,
+        midiFromY(y, zoomY),
+      );
       if (!hit) return false;
       store.removeNotes([hit.id]);
       return true;

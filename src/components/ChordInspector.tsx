@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useProjectStore, type ChordBlockItem } from '../store/useProjectStore';
+import { selectActiveTrackBlocks, useProjectStore, type ChordBlockItem } from '../store/useProjectStore';
 import { chordResolutionSteps } from '../lib/grid';
 import { candidateToMidi, formatIntervalName, midiToName, pitchClass } from '../lib/theory';
 import { CATEGORY_ORDER, CATEGORY_STYLES, styleFor } from '../lib/colors';
@@ -44,7 +44,7 @@ interface ChordInspectorProps {
  * ブロックが複数コードに分かれている場合は、セグメントを切り替えて見られる。
  */
 export function ChordInspector({ onPreview }: ChordInspectorProps) {
-  const blocks = useProjectStore((s) => s.blocks);
+  const blocks = useProjectStore(selectActiveTrackBlocks);
   const selectedBlockId = useProjectStore((s) => s.selectedBlockId);
   const selectedBlockIds = useProjectStore((s) => s.selectedBlockIds);
   const timeSignature = useProjectStore((s) => s.timeSignature);

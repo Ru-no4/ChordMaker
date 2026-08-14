@@ -71,6 +71,7 @@ function notesInSegment(notes: ChordBlockItem['notes'], seg: ChordSegmentData) {
  * ブロック自体は「ノートの入れ物」で、コード名と色は中のセグメントが持つ。
  */
 export function ChordBlock({ block, stepW, zoomY, laneH, selected }: ChordBlockProps) {
+  const trackId = useProjectStore((s) => s.activeTrackId);
   const selectBlock = useProjectStore((s) => s.selectBlock);
   const toggleBlockSelection = useProjectStore((s) => s.toggleBlockSelection);
   const selectSegment = useProjectStore((s) => s.selectSegment);
@@ -121,13 +122,13 @@ export function ChordBlock({ block, stepW, zoomY, laneH, selected }: ChordBlockP
 
       // 消しゴムはタップで削除
       if (editorTool === 'erase') {
-        removeBlock(block.id);
+        removeBlock(trackId, block.id);
         return;
       }
 
       // Shift+クリック: 複数選択のトグル（ドラッグは始めない。デスクトップの近道）
       if (mode === 'move' && e.shiftKey) {
-        toggleBlockSelection(block.id);
+        toggleBlockSelection(trackId, block.id);
         return;
       }
 
@@ -150,7 +151,7 @@ export function ChordBlock({ block, stepW, zoomY, laneH, selected }: ChordBlockP
           selectedSegmentStart >= clickedSeg.start &&
           selectedSegmentStart < clickedSeg.start + clickedSeg.length;
 
-        selectBlock(block.id);
+        selectBlock(trackId, block.id);
         selectSegment(clickedSeg.start);
 
         const segNotes = notesInSegment(block.notes, clickedSeg);
@@ -182,7 +183,7 @@ export function ChordBlock({ block, stepW, zoomY, laneH, selected }: ChordBlockP
       }
 
       // ---- 通常（単一コードのブロック本体、または端のリサイズ）はブロック単位で動く ----
-      selectBlock(block.id);
+      selectBlock(trackId, block.id);
 
       dragRef.current = {
         kind: 'block',
@@ -218,6 +219,7 @@ export function ChordBlock({ block, stepW, zoomY, laneH, selected }: ChordBlockP
       single,
       stepW,
       toggleBlockSelection,
+      trackId,
     ],
   );
 
@@ -248,17 +250,17 @@ export function ChordBlock({ block, stepW, zoomY, laneH, selected }: ChordBlockP
       const deltaSteps = (e.clientX - drag.originX) / stepW;
       switch (drag.mode) {
         case 'move':
-          moveBlock(drag.targetId, drag.origStart + deltaSteps);
+          moveBlock(trackId, drag.targetId, drag.origStart + deltaSteps);
           break;
         case 'resize-right':
-          resizeBlock(drag.targetId, drag.origLength + deltaSteps);
+          resizeBlock(trackId, drag.targetId, drag.origLength + deltaSteps);
           break;
         case 'resize-left':
-          resizeBlock(drag.targetId, drag.origLength - deltaSteps, true);
+          resizeBlock(trackId, drag.targetId, drag.origLength - deltaSteps, true);
           break;
       }
     },
-    [applyNoteDrag, duplicateSelectedNotes, moveBlock, quantize, resizeBlock, snap, stepW],
+    [applyNoteDrag, duplicateSelectedNotes, moveBlock, quantize, resizeBlock, snap, stepW, trackId],
   );
 
   const onPointerUp = useCallback(
@@ -272,7 +274,7 @@ export function ChordBlock({ block, stepW, zoomY, laneH, selected }: ChordBlockP
         // ドラッグせずに Ctrl+タップだけで終えた場合、最寄りの空き区間へ自動配置する
         // （既存ブロックの隙間に縛られず、無ければ元の位置に重ねて複製する）。
         // endTransaction より前に行い、掴んでから離すまでを1回の Undo にまとめる。
-        duplicateNotesToNearestGap(drag.originalNoteIds);
+        duplicateNotesToNearestGap(trackId, drag.originalNoteIds);
       }
       useProjectStore.getState().endTransaction();
 
@@ -282,7 +284,7 @@ export function ChordBlock({ block, stepW, zoomY, laneH, selected }: ChordBlockP
             // タップ（＝動かしていない）で、既にアクティブだった同じセグメントを
             // 再度タップしたら選択解除。違うセグメント・違うブロックへの
             // 切り替えは選択したままにする（ピアノロールも閉じない）。
-            selectBlock(null);
+            selectBlock(trackId, null);
           } else {
             setPianoRollOpen(true);
           }
@@ -294,11 +296,11 @@ export function ChordBlock({ block, stepW, zoomY, laneH, selected }: ChordBlockP
       // ピアノロールの開閉には触れない（閉じる必要は無い）。
       // 未選択のブロックを選んだときはピアノロールを必ず開く。
       if (drag.mode === 'move' && !drag.moved) {
-        if (drag.wasSelected) selectBlock(null);
+        if (drag.wasSelected) selectBlock(trackId, null);
         else setPianoRollOpen(true);
       }
     },
-    [duplicateNotesToNearestGap, selectBlock, setPianoRollOpen],
+    [duplicateNotesToNearestGap, selectBlock, setPianoRollOpen, trackId],
   );
 
   const height = blockHeight(zoomY);
@@ -320,7 +322,7 @@ export function ChordBlock({ block, stepW, zoomY, laneH, selected }: ChordBlockP
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        removeBlock(block.id);
+        removeBlock(trackId, block.id);
       }}
     >
       {segments.map((seg, i) => (

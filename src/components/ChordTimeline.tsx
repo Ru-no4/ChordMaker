@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react';
-import { useProjectStore } from '../store/useProjectStore';
+import { selectActiveTrackBlocks, useProjectStore } from '../store/useProjectStore';
 import { usePlayheadStore } from '../store/usePlayheadStore';
 import {
+  DEFAULT_CHORD_TRACK_HEIGHT,
   STEPS_PER_WHOLE,
   ZOOM_FACTOR,
   ZOOM_X_MAX,
@@ -39,7 +40,8 @@ interface ChordTimelineProps {
 }
 
 export function ChordTimeline({ onSeek }: ChordTimelineProps) {
-  const blocks = useProjectStore((s) => s.blocks);
+  const blocks = useProjectStore(selectActiveTrackBlocks);
+  const activeTrackId = useProjectStore((s) => s.activeTrackId);
   const timeSignature = useProjectStore((s) => s.timeSignature);
   const bars = useProjectStore((s) => s.bars);
   const setBars = useProjectStore((s) => s.setBars);
@@ -56,7 +58,9 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
   const editorTool = useProjectStore((s) => s.editorTool);
   const zoomX = useProjectStore((s) => s.zoomX);
   const chordZoomY = useProjectStore((s) => s.chordZoomY);
-  const chordTrackHeight = useProjectStore((s) => s.chordTrackHeight);
+  const chordTrackHeight = useProjectStore(
+    (s) => s.trackSettings[s.activeTrackId]?.height ?? DEFAULT_CHORD_TRACK_HEIGHT,
+  );
   const zoomXBy = useProjectStore((s) => s.zoomXBy);
   const chordZoomYBy = useProjectStore((s) => s.chordZoomYBy);
   const setZoomX = useProjectStore((s) => s.setZoomX);
@@ -132,7 +136,7 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
       if (editorTool === 'draw') {
         // 鉛筆はタップでブロック追加
         const rect = e.currentTarget.getBoundingClientRect();
-        addBlockAt((e.clientX - rect.left - marginPx) / stepW);
+        addBlockAt(activeTrackId, (e.clientX - rect.left - marginPx) / stepW);
         return;
       }
 
@@ -150,9 +154,9 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
         return;
       }
 
-      selectBlock(null);
+      selectBlock(activeTrackId, null);
     },
-    [addBlockAt, editorTool, marginPx, selectBlock, selectedBlockIds, stepW],
+    [activeTrackId, addBlockAt, editorTool, marginPx, selectBlock, selectedBlockIds, stepW],
   );
 
   const onLanePointerMove = useCallback(
@@ -176,9 +180,9 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
       const ids = blocks
         .filter((b) => b.start < hitEnd && b.start + b.length > hitStart)
         .map((b) => b.id);
-      selectBlocks(mq.additive ? [...mq.base, ...ids] : ids);
+      selectBlocks(activeTrackId, mq.additive ? [...mq.base, ...ids] : ids);
     },
-    [blocks, marginPx, ref, selectBlocks, stepW],
+    [activeTrackId, blocks, marginPx, ref, selectBlocks, stepW],
   );
 
   const onLanePointerUp = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
@@ -328,8 +332,9 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
 
   return (
     <section className="timeline" aria-label={t(ct.ariaLabel)}>
-      <div className="timeline__scroll" ref={ref} onScroll={onScroll} onWheel={onWheel}>
-        <div className="timeline__inner" style={{ width: GUTTER_WIDTH + laneWidth }}>
+      <div className="timeline__viewport">
+        <div className="timeline__scroll" ref={ref} onScroll={onScroll} onWheel={onWheel}>
+          <div className="timeline__inner" style={{ width: GUTTER_WIDTH + laneWidth }}>
           {/* ---- ルーラー ---- */}
           <div className="timeline__row timeline__row--ruler">
             <div className="timeline__gutter timeline__gutter--ruler">
@@ -465,23 +470,32 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
                 +
               </button>
             </div>
-
-            {/* ---- 縦ズーム（ピアノロールと同様、右端に固定表示） ---- */}
-            <div className="timeline__vzoom">
-              <ZoomSlider
-                orientation="vertical"
-                compact
-                value={chordZoomY}
-                min={ZOOM_Y_MIN}
-                max={ZOOM_Y_MAX}
-                onChange={setChordZoomY}
-                ariaLabel={t(ct.zoomVAria)}
-              />
-            </div>
           </div>
 
-          {/* ---- 再生ヘッド（ルーラー＋レーンを貫通） ---- */}
-          <Playhead stepW={stepW} offset={GUTTER_WIDTH + marginPx} variant="timeline" />
+            {/* ---- 再生ヘッド（ルーラー＋レーンを貫通） ---- */}
+            <Playhead stepW={stepW} offset={GUTTER_WIDTH + marginPx} variant="timeline" />
+          </div>
+        </div>
+
+        {/*
+          ---- 縦ズーム（ピアノロールの .pr-vzoom と同じ考え方）。
+          スクロール領域の外側の専用カラムに置くことで、水平スクロール幅の計算に
+          巻き込まれず常に右端に固定される。上の空白はルーラー行の高さぶん。
+          将来ここに縦スクロールバーが出ても、このカラムの位置は動かない。
+        ---- */}
+        <div className="timeline__vzoomcol">
+          <div className="timeline__vzoomcol-spacer" aria-hidden="true" />
+          <div className="timeline__vzoom" style={{ height: laneH }}>
+            <ZoomSlider
+              orientation="vertical"
+              compact
+              value={chordZoomY}
+              min={ZOOM_Y_MIN}
+              max={ZOOM_Y_MAX}
+              onChange={setChordZoomY}
+              ariaLabel={t(ct.zoomVAria)}
+            />
+          </div>
         </div>
       </div>
 

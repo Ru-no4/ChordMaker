@@ -1,6 +1,11 @@
 import { useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
-import { hasNoNotes, isDefaultProjectState, useProjectStore } from '../store/useProjectStore';
+import {
+  hasNoNotes,
+  isDefaultProjectState,
+  mergeTracksForSave,
+  useProjectStore,
+} from '../store/useProjectStore';
 import {
   ProjectFileError,
   downloadProjectFile,
@@ -46,9 +51,8 @@ export function ProjectFileControls() {
   const chordResolution = useProjectStore((s) => s.chordResolution);
   const quantize = useProjectStore((s) => s.quantize);
   const snap = useProjectStore((s) => s.snap);
-  const instrumentId = useProjectStore((s) => s.instrumentId);
-  const volumeDb = useProjectStore((s) => s.volumeDb);
-  const blocks = useProjectStore((s) => s.blocks);
+  const tracks = useProjectStore((s) => s.tracks);
+  const trackSettings = useProjectStore((s) => s.trackSettings);
   const loadProject = useProjectStore((s) => s.loadProject);
   const clearAll = useProjectStore((s) => s.clearAll);
   const resetToDefault = useProjectStore((s) => s.resetToDefault);
@@ -58,7 +62,7 @@ export function ProjectFileControls() {
   // 既定状態から何も変えていない、またはノートが1つも無いなら、
   // 失うものが無いので保存確認を挟まず即実行してよい。
   const skipConfirm =
-    hasNoNotes(blocks) ||
+    hasNoNotes(tracks) ||
     isDefaultProjectState({
       bpm,
       timeSignature,
@@ -67,9 +71,8 @@ export function ProjectFileControls() {
       chordResolution,
       quantize,
       snap,
-      instrumentId,
-      volumeDb,
-      blocks,
+      tracks,
+      trackSettings,
     });
 
   const handleSave = () => {
@@ -81,9 +84,7 @@ export function ProjectFileControls() {
       chordResolution,
       quantize,
       snap,
-      instrumentId,
-      volumeDb,
-      blocks,
+      tracks: mergeTracksForSave({ tracks, trackSettings }),
     });
     downloadProjectFile(file, defaultFilename());
   };

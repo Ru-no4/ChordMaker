@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { WheelEvent as ReactWheelEvent } from 'react';
-import { useProjectStore } from '../store/useProjectStore';
+import { selectActiveTrackBlocks, useProjectStore } from '../store/useProjectStore';
 import {
   ZOOM_FACTOR,
   ZOOM_X_MAX,
@@ -36,7 +36,7 @@ interface PianoRollProps {
 }
 
 export function PianoRoll({ onPreview }: PianoRollProps) {
-  const blocks = useProjectStore((s) => s.blocks);
+  const blocks = useProjectStore(selectActiveTrackBlocks);
   const selectedBlockId = useProjectStore((s) => s.selectedBlockId);
   const selectedNoteIds = useProjectStore((s) => s.selectedNoteIds);
   const open = useProjectStore((s) => s.pianoRollOpen);

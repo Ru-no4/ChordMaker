@@ -17,7 +17,7 @@ import {
 } from '../lib/grid';
 import { DEFAULT_INSTRUMENT_ID } from '../lib/instruments';
 import { loadAutosave, saveAutosave } from '../lib/autosave';
-import type { ProjectFile } from '../lib/projectFile';
+import type { ProjectFile, SerializedTrack } from '../lib/projectFile';
 
 /* ------------------------------------------------------------------ */
 /* モデル                                                              */
@@ -35,10 +35,33 @@ export interface NoteItem {
 
 export interface ChordBlockItem {
   id: string;
-  /** プロジェクト先頭からの位置（32分音符単位） */
+  /** トラック先頭からの位置（32分音符単位） */
   start: number;
   length: number;
   notes: NoteItem[];
+}
+
+/**
+ * トラックの「中身」。ブロック配置・構成音そのものなので Undo 対象
+ * （DocSnapshot に含まれる）。音源・音量・ミュート等の「設定」は
+ * TrackSettings 側に分離してある — 音源を変えただけで Undo できてしまう、
+ * という現行と異なる挙動が紛れ込まないようにするため。
+ */
+export interface Track {
+  id: string;
+  name: string;
+  color: string;
+  blocks: ChordBlockItem[];
+}
+
+/** トラックの「設定」。Undo 対象外（他の設定系フィールドと同じ扱い）。 */
+export interface TrackSettings {
+  instrumentId: string;
+  volumeDb: number;
+  muted: boolean;
+  solo: boolean;
+  /** トラックの表示高さ(px)。境界のドラッグで手動調整する */
+  height: number;
 }
 
 /** 編集ツール。すべての操作がツールだけで到達できるようにする。 */
@@ -87,6 +110,8 @@ const DEFAULT_BPM = 160;
 const DEFAULT_QUANTIZE: QuantizeValue = 16;
 const DEFAULT_CHORD_RESOLUTION: ChordResolution = 4;
 const DEFAULT_VOLUME_DB = -30;
+const DEFAULT_TRACK_NAME = 'CHORD TRACK';
+const DEFAULT_TRACK_COLOR = '#4f8cff';
 /** 「小節数」入力の安全な上限（意味のある業務的な上限ではなく、暴走防止のための値） */
 const BARS_MAX = 512;
 
@@ -145,6 +170,21 @@ function seedBlocks(): ChordBlockItem[] {
   return seedBlockSpecs().map(({ start, length, midis }) => makeBlock(start, length, midis));
 }
 
+function makeDefaultTrackSettings(): TrackSettings {
+  return {
+    instrumentId: DEFAULT_INSTRUMENT_ID,
+    volumeDb: DEFAULT_VOLUME_DB,
+    muted: false,
+    solo: false,
+    height: DEFAULT_CHORD_TRACK_HEIGHT,
+  };
+}
+
+/** 既定の単一トラック（起動時・初期化時に使う） */
+function makeDefaultTrack(): Track {
+  return { id: nextId('trk'), name: DEFAULT_TRACK_NAME, color: DEFAULT_TRACK_COLOR, blocks: seedBlocks() };
+}
+
 /**
  * 起動時の既定状態（設定・コード進行とも）から何も変えていないかどうか。
  * 全削除・初期化の確認ダイアログを省略してよいかの判定に使う
@@ -158,10 +198,12 @@ export function isDefaultProjectState(s: {
   chordResolution: ChordResolution;
   quantize: QuantizeValue;
   snap: boolean;
-  instrumentId: string;
-  volumeDb: number;
-  blocks: ChordBlockItem[];
+  tracks: Track[];
+  trackSettings: Record<string, TrackSettings>;
 }): boolean {
+  if (s.tracks.length !== 1) return false;
+  const track = s.tracks[0];
+  const settings = s.trackSettings[track.id];
   return (
     s.bpm === DEFAULT_BPM &&
     s.timeSignature.numerator === DEFAULT_SIG.numerator &&
@@ -171,15 +213,18 @@ export function isDefaultProjectState(s: {
     s.chordResolution === DEFAULT_CHORD_RESOLUTION &&
     s.quantize === DEFAULT_QUANTIZE &&
     s.snap === true &&
-    s.instrumentId === DEFAULT_INSTRUMENT_ID &&
-    s.volumeDb === DEFAULT_VOLUME_DB &&
-    isSeedBlocks(s.blocks)
+    !!settings &&
+    settings.instrumentId === DEFAULT_INSTRUMENT_ID &&
+    settings.volumeDb === DEFAULT_VOLUME_DB &&
+    !settings.muted &&
+    !settings.solo &&
+    isSeedBlocks(track.blocks)
   );
 }
 
-/** ノートが1つも配置されていないか（ブロックが無い、または全ブロックが空） */
-export function hasNoNotes(blocks: ChordBlockItem[]): boolean {
-  return blocks.every((b) => b.notes.length === 0);
+/** ノートが1つも配置されていないか（トラックが無い、または全ブロックが空） */
+export function hasNoNotes(tracks: Track[]): boolean {
+  return tracks.every((t) => t.blocks.every((b) => b.notes.length === 0));
 }
 
 /* ------------------------------------------------------------------ */
@@ -188,10 +233,11 @@ export function hasNoNotes(blocks: ChordBlockItem[]): boolean {
 
 /**
  * 履歴に積むのは「作品の中身」だけ。
- * ツール選択・表示倍率・再生状態・選択状態は元に戻す対象にしない。
+ * ツール選択・表示倍率・再生状態・選択状態・トラックの設定（音源/音量/
+ * ミュート/表示高さ）は元に戻す対象にしない。
  */
 interface DocSnapshot {
-  blocks: ChordBlockItem[];
+  tracks: Track[];
   bars: number;
   rangeStart: number;
   timeSignature: TimeSignature;
@@ -200,12 +246,12 @@ interface DocSnapshot {
 const HISTORY_LIMIT = 100;
 
 const docOf = (s: {
-  blocks: ChordBlockItem[];
+  tracks: Track[];
   bars: number;
   rangeStart: number;
   timeSignature: TimeSignature;
 }): DocSnapshot => ({
-  blocks: s.blocks,
+  tracks: s.tracks,
   bars: s.bars,
   rangeStart: s.rangeStart,
   timeSignature: s.timeSignature,
@@ -213,19 +259,22 @@ const docOf = (s: {
 
 /** すべて immutable に差し替えているので参照比較で十分 */
 const sameDoc = (a: DocSnapshot, b: DocSnapshot): boolean =>
-  a.blocks === b.blocks &&
+  a.tracks === b.tracks &&
   a.bars === b.bars &&
   a.rangeStart === b.rangeStart &&
   a.timeSignature === b.timeSignature;
 
-/** 復元後、消えたブロック / ノートを選択したままにしない */
+/** 復元後、消えたトラック / ブロック / ノートを選択・アクティブのままにしない */
 function reconcileSelection(doc: DocSnapshot, prev: ProjectState) {
-  const noteIds = new Set(doc.blocks.flatMap((b) => b.notes.map((n) => n.id)));
-  const blockIds = new Set(doc.blocks.map((b) => b.id));
+  const activeTrack = doc.tracks.find((t) => t.id === prev.activeTrackId) ?? doc.tracks[0] ?? null;
+  const activeTrackId = activeTrack?.id ?? prev.activeTrackId;
+  const blocks = activeTrack?.blocks ?? [];
+  const noteIds = new Set(blocks.flatMap((b) => b.notes.map((n) => n.id)));
+  const blockIds = new Set(blocks.map((b) => b.id));
   return {
-    selectedBlockId: doc.blocks.some((b) => b.id === prev.selectedBlockId)
-      ? prev.selectedBlockId
-      : null,
+    activeTrackId,
+    selectedBlockId:
+      prev.selectedBlockId && blockIds.has(prev.selectedBlockId) ? prev.selectedBlockId : null,
     selectedBlockIds: prev.selectedBlockIds.filter((id) => blockIds.has(id)),
     selectedNoteIds: prev.selectedNoteIds.filter((id) => noteIds.has(id)),
     selectedSegmentStart: null,
@@ -246,6 +295,7 @@ interface ProjectState {
   loop: boolean;
   quantize: QuantizeValue;
   snap: boolean;
+  /** マスターフェーダー（全トラック共通の最終ミックス音量） */
   volumeDb: number;
 
   /* --- 編集設定 --- */
@@ -258,17 +308,8 @@ interface ProjectState {
   zoomY: number;
   /** コードトラックの縦方向表示倍率（ピアノロールとは独立） */
   chordZoomY: number;
-  /** コードトラックの表示高さ(px)。ズームとは独立に、境界のドラッグで手動調整する */
-  chordTrackHeight: number;
   /** 再生ヘッドを画面中央に追従させる */
   followPlayhead: boolean;
-
-  /* --- 音源 --- */
-  instrumentId: string;
-  /** サンプルの読み込み中。この間は内蔵シンセで鳴る。 */
-  instrumentLoading: boolean;
-  /** 読み込み失敗フラグ。メッセージは持たず、表示側で locale に応じて組み立てる。 */
-  instrumentError: boolean;
 
   /* --- 履歴 --- */
   past: DocSnapshot[];
@@ -281,7 +322,14 @@ interface ProjectState {
   isPlaying: boolean;
 
   /* --- 内容 --- */
-  blocks: ChordBlockItem[];
+  tracks: Track[];
+  /** トラック単位の設定。Undo 対象外（tracks とは別に持つ理由は上記コメント参照） */
+  trackSettings: Record<string, TrackSettings>;
+  /** 今操作対象になっているトラック。ピアノロール・選択操作はこのトラックに対して働く */
+  activeTrackId: string;
+  /** トラック単位の音源読み込み状態。trackSettings と同様 Undo 対象外。 */
+  trackInstrumentLoading: Record<string, boolean>;
+  trackInstrumentError: Record<string, boolean>;
   selectedBlockId: string | null;
   /** コードトラック上の複数選択（一括ボイシングなど）。通常の単一選択とは独立して持つ。 */
   selectedBlockIds: string[];
@@ -297,11 +345,12 @@ interface ProjectState {
   setTimeSignature: (sig: TimeSignature) => void;
   setBars: (bars: number) => void;
   setRangeStart: (bar: number) => void;
-  /** 先頭に1小節挿入し、既存の内容をすべて後ろへずらす */
+  /** 先頭に1小節挿入し、既存の内容をすべて後ろへずらす（全トラック共通） */
   addBarAtStart: () => void;
   toggleLoop: () => void;
   setQuantize: (q: QuantizeValue) => void;
   toggleSnap: () => void;
+  /** マスターフェーダー */
   setVolumeDb: (db: number) => void;
   setChordResolution: (res: ChordResolution) => void;
   setEditorTool: (tool: EditorTool) => void;
@@ -313,10 +362,19 @@ interface ProjectState {
   zoomYBy: (factor: number) => void;
   chordZoomYBy: (factor: number) => void;
   resetZoom: () => void;
-  setChordTrackHeight: (px: number) => void;
   toggleFollowPlayhead: () => void;
-  setInstrument: (id: string) => void;
-  setInstrumentStatus: (loading: boolean, error?: boolean) => void;
+
+  /* --- トラック --- */
+  addTrack: () => string;
+  removeTrack: (trackId: string) => void;
+  setActiveTrack: (trackId: string) => void;
+  setTrackInstrument: (trackId: string, instrumentId: string) => void;
+  setTrackInstrumentStatus: (trackId: string, loading: boolean, error?: boolean) => void;
+  setTrackVolumeDb: (trackId: string, db: number) => void;
+  setTrackHeight: (trackId: string, px: number) => void;
+  toggleTrackMute: (trackId: string) => void;
+  toggleTrackSolo: (trackId: string) => void;
+  renameTrack: (trackId: string, name: string) => void;
 
   /** ドラッグの開始・終了で呼び、その間の変更を1つの履歴にまとめる */
   beginTransaction: () => void;
@@ -326,19 +384,19 @@ interface ProjectState {
 
   setPlaying: (playing: boolean) => void;
 
-  addBlockAt: (step: number) => string | null;
-  removeBlock: (id: string) => void;
-  moveBlock: (id: string, step: number) => void;
-  resizeBlock: (id: string, length: number, fromStart?: boolean) => void;
-  selectBlock: (id: string | null) => void;
-  selectBlocks: (ids: string[], additive?: boolean) => void;
-  toggleBlockSelection: (id: string) => void;
+  addBlockAt: (trackId: string, step: number) => string | null;
+  removeBlock: (trackId: string, id: string) => void;
+  moveBlock: (trackId: string, id: string, step: number) => void;
+  resizeBlock: (trackId: string, id: string, length: number, fromStart?: boolean) => void;
+  selectBlock: (trackId: string, id: string | null) => void;
+  selectBlocks: (trackId: string, ids: string[], additive?: boolean) => void;
+  toggleBlockSelection: (trackId: string, id: string) => void;
   clearBlockSelection: () => void;
   selectSegment: (relStep: number | null) => void;
   setPianoRollOpen: (open: boolean) => void;
-  copyBlock: (id: string) => void;
-  pasteBlockAt: (step: number) => string | null;
-  /** 呼び出し側で計算済みのセグメント差し替えを、まとめて1回の Undo で反映する */
+  copyBlock: (trackId: string, id: string) => void;
+  pasteBlockAt: (trackId: string, step: number) => string | null;
+  /** 呼び出し側で計算済みのセグメント差し替えを、まとめて1回の Undo で反映する（アクティブトラック対象） */
   applyBulkSegmentNotes: (
     updates: Array<{ blockId: string; segStart: number; segLength: number; midis: number[] }>,
   ) => void;
@@ -347,9 +405,9 @@ interface ProjectState {
    * （無ければ元の位置に重ねて複製するだけ）。Ctrl+タップ（ドラッグ無し）での
    * コード複製に使う — 既存ブロックの隙間に縛られず、空いている場所へ自動で飛ぶ。
    */
-  duplicateNotesToNearestGap: (noteIds: string[]) => void;
+  duplicateNotesToNearestGap: (trackId: string, noteIds: string[]) => void;
 
-  /** 追加したノートの id を返す（描画直後にドラッグで長さを決めるため） */
+  /** 追加したノートの id を返す（描画直後にドラッグで長さを決めるため）。アクティブトラック対象。 */
   addNote: (blockId: string, midi: number, start: number, length: number) => string | null;
   updateNote: (blockId: string, noteId: string, patch: Partial<Omit<NoteItem, 'id'>>) => void;
   removeNotes: (ids: string[]) => void;
@@ -491,9 +549,42 @@ function commonDelta(
   return clamp(desired, lo, hi);
 }
 
+const EMPTY_BLOCKS: ChordBlockItem[] = [];
+
+/** アクティブトラックのブロック一覧（無ければ空配列）。UI コンポーネントの `blocks` セレクタとして使う。 */
+export function selectActiveTrackBlocks(s: {
+  tracks: Track[];
+  activeTrackId: string;
+}): ChordBlockItem[] {
+  return s.tracks.find((t) => t.id === s.activeTrackId)?.blocks ?? EMPTY_BLOCKS;
+}
+
+/** file.tracks（設定込みの保存形式）を tracks/trackSettings のランタイム形式へ分解する */
+function splitSerializedTracks(
+  serialized: SerializedTrack[],
+): { tracks: Track[]; trackSettings: Record<string, TrackSettings> } {
+  const tracks: Track[] = [];
+  const trackSettings: Record<string, TrackSettings> = {};
+  for (const t of serialized) {
+    tracks.push({ id: t.id, name: t.name, color: t.color, blocks: t.blocks });
+    trackSettings[t.id] = {
+      instrumentId: t.instrumentId,
+      volumeDb: t.volumeDb,
+      muted: t.muted,
+      solo: t.solo,
+      height: t.height,
+    };
+  }
+  return { tracks, trackSettings };
+}
+
 // タブを閉じるまでの間だけ、リロードしても直前のプロジェクトへ戻れるようにする。
 // 壊れている・保存が無ければ null のままで、以下の各項目が既定値にフォールバックする。
 const autosaved = loadAutosave();
+const autosavedSplit = autosaved ? splitSerializedTracks(autosaved.tracks) : null;
+const initialTracks = autosavedSplit?.tracks ?? [makeDefaultTrack()];
+const initialTrackSettings =
+  autosavedSplit?.trackSettings ?? { [initialTracks[0].id]: makeDefaultTrackSettings() };
 
 export const useProjectStore = create<ProjectState>((set, get) => {
   /** 単発の操作を1つの履歴としてまとめる */
@@ -501,6 +592,20 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     get().beginTransaction();
     mutate();
     get().endTransaction();
+  };
+
+  /** アクティブトラックのブロック配列を更新する（見つからなければ何もしない） */
+  const updateActiveTrackBlocks = (
+    updater: (blocks: ChordBlockItem[], track: Track) => ChordBlockItem[] | null,
+  ) => {
+    const state = get();
+    const track = state.tracks.find((t) => t.id === state.activeTrackId);
+    if (!track) return;
+    const nextBlocks = updater(track.blocks, track);
+    if (nextBlocks === null) return;
+    set({
+      tracks: state.tracks.map((t) => (t.id === track.id ? { ...t, blocks: nextBlocks } : t)),
+    });
   };
 
   return {
@@ -511,19 +616,14 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   loop: true,
   quantize: autosaved?.quantize ?? DEFAULT_QUANTIZE,
   snap: autosaved?.snap ?? true,
-  volumeDb: autosaved?.volumeDb ?? DEFAULT_VOLUME_DB,
+  volumeDb: DEFAULT_VOLUME_DB,
 
   chordResolution: autosaved?.chordResolution ?? DEFAULT_CHORD_RESOLUTION,
   editorTool: 'draw',
   zoomX: 0.5,
   zoomY: 0.8, // ZOOM_FACTOR 1段階分ズームアウトした状態を初期表示にする
   chordZoomY: 0.8,
-  chordTrackHeight: DEFAULT_CHORD_TRACK_HEIGHT,
   followPlayhead: true,
-
-  instrumentId: autosaved?.instrumentId ?? DEFAULT_INSTRUMENT_ID,
-  instrumentLoading: false,
-  instrumentError: false,
 
   past: [],
   future: [],
@@ -532,7 +632,11 @@ export const useProjectStore = create<ProjectState>((set, get) => {
 
   isPlaying: false,
 
-  blocks: autosaved?.blocks ?? seedBlocks(),
+  tracks: initialTracks,
+  trackSettings: initialTrackSettings,
+  activeTrackId: initialTracks[0].id,
+  trackInstrumentLoading: Object.fromEntries(initialTracks.map((t) => [t.id, false])),
+  trackInstrumentError: Object.fromEntries(initialTracks.map((t) => [t.id, false])),
   selectedBlockId: null,
   selectedBlockIds: [],
   selectedNoteIds: [],
@@ -568,7 +672,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     transact(() => set({ rangeStart: clamp(snapped, 0, BARS_MAX) }));
   },
 
-  // 先頭に1小節ぶんの空きを作る。既存のブロック（＝中のノートも一緒に）を
+  // 先頭に1小節ぶんの空きを作る。全トラックの既存ブロック（＝中のノートも一緒に）を
   // すべて後ろへずらし、小節数と再生範囲の開始位置も1小節分あわせて増やす。
   // 座標がマイナスになることは無いので、小節番号は常に1始まりのまま保てる。
   addBarAtStart: () =>
@@ -576,7 +680,10 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       const state = get();
       const shift = stepsPerBar(state.timeSignature);
       set({
-        blocks: state.blocks.map((b) => ({ ...b, start: b.start + shift })),
+        tracks: state.tracks.map((t) => ({
+          ...t,
+          blocks: t.blocks.map((b) => ({ ...b, start: b.start + shift })),
+        })),
         bars: clamp(state.bars + 1, 1, BARS_MAX),
         rangeStart: clamp(state.rangeStart + 1, 0, BARS_MAX),
       });
@@ -598,27 +705,130 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   chordZoomYBy: (factor) =>
     set((s) => ({ chordZoomY: clamp(s.chordZoomY * factor, ZOOM_Y_MIN, ZOOM_Y_MAX) })),
   resetZoom: () => set({ zoomX: 0.5, zoomY: 0.8, chordZoomY: 0.8 }),
-  setChordTrackHeight: (px) =>
-    set({ chordTrackHeight: clamp(px, CHORD_TRACK_HEIGHT_MIN, CHORD_TRACK_HEIGHT_MAX) }),
   toggleFollowPlayhead: () => set((s) => ({ followPlayhead: !s.followPlayhead })),
-  setInstrument: (instrumentId) => set({ instrumentId, instrumentError: false }),
-  setInstrumentStatus: (instrumentLoading, instrumentError = false) =>
-    set({ instrumentLoading, instrumentError }),
+
+  /* --- トラック --- */
+  addTrack: () => {
+    const track: Track = {
+      id: nextId('trk'),
+      name: `TRACK ${get().tracks.length + 1}`,
+      color: DEFAULT_TRACK_COLOR,
+      blocks: [],
+    };
+    transact(() =>
+      set((s) => ({
+        tracks: [...s.tracks, track],
+        trackSettings: { ...s.trackSettings, [track.id]: makeDefaultTrackSettings() },
+        trackInstrumentLoading: { ...s.trackInstrumentLoading, [track.id]: false },
+        trackInstrumentError: { ...s.trackInstrumentError, [track.id]: false },
+        activeTrackId: track.id,
+      })),
+    );
+    return track.id;
+  },
+
+  removeTrack: (trackId) =>
+    transact(() =>
+      set((s) => {
+        if (s.tracks.length <= 1) return {}; // 最後の1本は消せない
+        const remaining = s.tracks.filter((t) => t.id !== trackId);
+        const { [trackId]: _removed, ...restSettings } = s.trackSettings;
+        const { [trackId]: _removedLoading, ...restLoading } = s.trackInstrumentLoading;
+        const { [trackId]: _removedError, ...restError } = s.trackInstrumentError;
+        const wasActive = s.activeTrackId === trackId;
+        return {
+          tracks: remaining,
+          trackSettings: restSettings,
+          trackInstrumentLoading: restLoading,
+          trackInstrumentError: restError,
+          activeTrackId: wasActive ? remaining[0].id : s.activeTrackId,
+          selectedBlockId: wasActive ? null : s.selectedBlockId,
+          selectedBlockIds: wasActive ? [] : s.selectedBlockIds,
+          selectedNoteIds: wasActive ? [] : s.selectedNoteIds,
+        };
+      }),
+    ),
+
+  setActiveTrack: (trackId) =>
+    set((s) => (s.tracks.some((t) => t.id === trackId) ? { activeTrackId: trackId } : {})),
+
+  setTrackInstrument: (trackId, instrumentId) =>
+    set((s) => {
+      const settings = s.trackSettings[trackId];
+      if (!settings) return {};
+      return {
+        trackSettings: {
+          ...s.trackSettings,
+          [trackId]: { ...settings, instrumentId, /* 切替直後は未読込 */ },
+        },
+      };
+    }),
+
+  setTrackInstrumentStatus: (trackId, loading, error = false) =>
+    set((s) => ({
+      trackInstrumentLoading: { ...s.trackInstrumentLoading, [trackId]: loading },
+      trackInstrumentError: { ...s.trackInstrumentError, [trackId]: error },
+    })),
+
+  setTrackVolumeDb: (trackId, db) =>
+    set((s) => {
+      const settings = s.trackSettings[trackId];
+      if (!settings) return {};
+      return {
+        trackSettings: { ...s.trackSettings, [trackId]: { ...settings, volumeDb: clamp(db, -40, 0) } },
+      };
+    }),
+
+  setTrackHeight: (trackId, px) =>
+    set((s) => {
+      const settings = s.trackSettings[trackId];
+      if (!settings) return {};
+      return {
+        trackSettings: {
+          ...s.trackSettings,
+          [trackId]: { ...settings, height: clamp(px, CHORD_TRACK_HEIGHT_MIN, CHORD_TRACK_HEIGHT_MAX) },
+        },
+      };
+    }),
+
+  toggleTrackMute: (trackId) =>
+    set((s) => {
+      const settings = s.trackSettings[trackId];
+      if (!settings) return {};
+      return { trackSettings: { ...s.trackSettings, [trackId]: { ...settings, muted: !settings.muted } } };
+    }),
+
+  toggleTrackSolo: (trackId) =>
+    set((s) => {
+      const settings = s.trackSettings[trackId];
+      if (!settings) return {};
+      return { trackSettings: { ...s.trackSettings, [trackId]: { ...settings, solo: !settings.solo } } };
+    }),
+
+  renameTrack: (trackId, name) =>
+    transact(() =>
+      set((s) => ({ tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, name } : t)) })),
+    ),
 
   /* --- 再生 --- */
   setPlaying: (isPlaying) => set({ isPlaying }),
 
   /* --- ブロック --- */
-  addBlockAt: (step) => {
+  addBlockAt: (trackId, step) => {
     get().beginTransaction();
     const state = get();
+    const track = state.tracks.find((t) => t.id === trackId);
+    if (!track) {
+      get().endTransaction();
+      return null;
+    }
     const bar = stepsPerBar(state.timeSignature);
     // 配置そのものは小節数に縛られない（再生範囲を超えて置ける。再生範囲は
     // bars がそのまま基準として使われ続ける）
     const start = Math.max(0, snapStep(step, state.quantize, state.snap));
 
     // 既存ブロックと重なる位置には作らない
-    const gap = freeGaps(state.blocks, '', Infinity).find(([s, e]) => start >= s && start < e);
+    const gap = freeGaps(track.blocks, '', Infinity).find(([s, e]) => start >= s && start < e);
     if (!gap) {
       get().endTransaction();
       return null;
@@ -628,7 +838,10 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     const length = clamp(bar, 1, gap[1] - start);
     const block: ChordBlockItem = { id: nextId('blk'), start, length, notes: [] };
     set({
-      blocks: [...state.blocks, block].sort((a, b) => a.start - b.start),
+      tracks: state.tracks.map((t) =>
+        t.id === trackId ? { ...t, blocks: [...t.blocks, block].sort((a, b) => a.start - b.start) } : t,
+      ),
+      activeTrackId: trackId,
       selectedBlockId: block.id,
       selectedNoteIds: [],
       selectedSegmentStart: null,
@@ -638,94 +851,125 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     return block.id;
   },
 
-  removeBlock: (id) =>
+  removeBlock: (trackId, id) =>
     transact(() =>
-    set((state) => {
-      const target = state.blocks.find((b) => b.id === id);
-      const removedNoteIds = new Set(target?.notes.map((n) => n.id) ?? []);
-      return {
-        blocks: state.blocks.filter((b) => b.id !== id),
-        selectedBlockId: state.selectedBlockId === id ? null : state.selectedBlockId,
-        selectedBlockIds: state.selectedBlockIds.filter((bid) => bid !== id),
-        selectedNoteIds: state.selectedNoteIds.filter((nid) => !removedNoteIds.has(nid)),
-        selectedSegmentStart:
-          state.selectedBlockId === id ? null : state.selectedSegmentStart,
-      };
-    }),
+      set((state) => {
+        const track = state.tracks.find((t) => t.id === trackId);
+        if (!track) return {};
+        const target = track.blocks.find((b) => b.id === id);
+        const removedNoteIds = new Set(target?.notes.map((n) => n.id) ?? []);
+        return {
+          tracks: state.tracks.map((t) =>
+            t.id === trackId ? { ...t, blocks: t.blocks.filter((b) => b.id !== id) } : t,
+          ),
+          selectedBlockId: state.selectedBlockId === id ? null : state.selectedBlockId,
+          selectedBlockIds: state.selectedBlockIds.filter((bid) => bid !== id),
+          selectedNoteIds: state.selectedNoteIds.filter((nid) => !removedNoteIds.has(nid)),
+          selectedSegmentStart:
+            state.selectedBlockId === id ? null : state.selectedSegmentStart,
+        };
+      }),
     ),
 
-  moveBlock: (id, step) =>
+  moveBlock: (trackId, id, step) =>
     set((state) => {
-      const target = state.blocks.find((b) => b.id === id);
+      const track = state.tracks.find((t) => t.id === trackId);
+      if (!track) return {};
+      const target = track.blocks.find((b) => b.id === id);
       if (!target) return {};
       const wanted = Math.max(0, snapStep(step, state.quantize, state.snap));
-      const start = placeBlock(state.blocks, id, wanted, target.length, Infinity);
+      const start = placeBlock(track.blocks, id, wanted, target.length, Infinity);
       if (start === null || start === target.start) return {};
       return {
-        blocks: state.blocks
-          .map((b) => (b.id === id ? { ...b, start } : b))
-          .sort((a, b) => a.start - b.start),
+        tracks: state.tracks.map((t) =>
+          t.id === trackId
+            ? {
+                ...t,
+                blocks: t.blocks
+                  .map((b) => (b.id === id ? { ...b, start } : b))
+                  .sort((a, b) => a.start - b.start),
+              }
+            : t,
+        ),
       };
     }),
 
-  resizeBlock: (id, length, fromStart = false) =>
+  resizeBlock: (trackId, id, length, fromStart = false) =>
     set((state) => {
-      const target = state.blocks.find((b) => b.id === id);
+      const track = state.tracks.find((t) => t.id === trackId);
+      if (!track) return {};
+      const target = track.blocks.find((b) => b.id === id);
       if (!target) return {};
       const snapped = snapLength(length, state.quantize, state.snap);
 
       if (fromStart) {
         // 末尾を固定して頭を動かす
         const end = target.start + target.length;
-        const floor = prevBoundary(state.blocks, id, target.start);
+        const floor = prevBoundary(track.blocks, id, target.start);
         const start = clamp(end - snapped, floor, end - 1);
         if (start === target.start) return {};
         const delta = start - target.start;
         return {
-          blocks: state.blocks.map((b) =>
-            b.id === id
+          tracks: state.tracks.map((t) =>
+            t.id === trackId
               ? {
-                  ...b,
-                  start,
-                  length: end - start,
-                  // ブロック頭が動いた分、ノートの相対位置を補正
-                  notes: b.notes.map((n) => ({ ...n, start: Math.max(0, n.start - delta) })),
+                  ...t,
+                  blocks: t.blocks.map((b) =>
+                    b.id === id
+                      ? {
+                          ...b,
+                          start,
+                          length: end - start,
+                          // ブロック頭が動いた分、ノートの相対位置を補正
+                          notes: b.notes.map((n) => ({ ...n, start: Math.max(0, n.start - delta) })),
+                        }
+                      : b,
+                  ),
                 }
-              : b,
+              : t,
           ),
         };
       }
 
       // 頭を固定して末尾を動かす（小節数には縛られない）
-      const ceiling = nextBoundary(state.blocks, id, target.start + target.length, Infinity);
+      const ceiling = nextBoundary(track.blocks, id, target.start + target.length, Infinity);
       const nextLength = clamp(snapped, 1, ceiling - target.start);
       if (nextLength === target.length) return {};
       return {
-        blocks: state.blocks.map((b) =>
-          b.id === id
+        tracks: state.tracks.map((t) =>
+          t.id === trackId
             ? {
-                ...b,
-                length: nextLength,
-                // 短くしたときはノートがはみ出さないように詰める
-                notes: b.notes
-                  .filter((n) => n.start < nextLength)
-                  .map((n) => ({ ...n, length: Math.min(n.length, nextLength - n.start) })),
+                ...t,
+                blocks: t.blocks.map((b) =>
+                  b.id === id
+                    ? {
+                        ...b,
+                        length: nextLength,
+                        // 短くしたときはノートがはみ出さないように詰める
+                        notes: b.notes
+                          .filter((n) => n.start < nextLength)
+                          .map((n) => ({ ...n, length: Math.min(n.length, nextLength - n.start) })),
+                      }
+                    : b,
+                ),
               }
-            : b,
+            : t,
         ),
       };
     }),
 
-  selectBlock: (selectedBlockId) =>
+  selectBlock: (trackId, selectedBlockId) =>
     set({
+      activeTrackId: trackId,
       selectedBlockId,
       selectedBlockIds: [],
       selectedNoteIds: [],
       selectedSegmentStart: null,
     }),
 
-  selectBlocks: (ids, additive = false) =>
+  selectBlocks: (trackId, ids, additive = false) =>
     set((state) => ({
+      activeTrackId: trackId,
       selectedBlockIds: additive
         ? [...new Set([...state.selectedBlockIds, ...ids])]
         : [...new Set(ids)],
@@ -733,8 +977,9 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       selectedSegmentStart: null,
     })),
 
-  toggleBlockSelection: (id) =>
+  toggleBlockSelection: (trackId, id) =>
     set((state) => ({
+      activeTrackId: trackId,
       selectedBlockIds: state.selectedBlockIds.includes(id)
         ? state.selectedBlockIds.filter((x) => x !== id)
         : [...state.selectedBlockIds, id],
@@ -748,8 +993,9 @@ export const useProjectStore = create<ProjectState>((set, get) => {
 
   setPianoRollOpen: (pianoRollOpen) => set({ pianoRollOpen }),
 
-  copyBlock: (id) => {
-    const block = get().blocks.find((b) => b.id === id);
+  copyBlock: (trackId, id) => {
+    const track = get().tracks.find((t) => t.id === trackId);
+    const block = track?.blocks.find((b) => b.id === id);
     if (!block) return;
     set({
       clipboard: {
@@ -765,14 +1011,15 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     });
   },
 
-  pasteBlockAt: (step) => {
+  pasteBlockAt: (trackId, step) => {
     const state = get();
+    const track = state.tracks.find((t) => t.id === trackId);
     const clip = state.clipboard;
-    if (!clip || clip.kind !== 'block') return null;
+    if (!track || !clip || clip.kind !== 'block') return null;
 
     get().beginTransaction();
     const desired = Math.max(0, snapStep(step, state.quantize, state.snap));
-    const start = placeBlock(state.blocks, '', desired, clip.length, Infinity);
+    const start = placeBlock(track.blocks, '', desired, clip.length, Infinity);
     if (start === null) {
       get().endTransaction();
       return null;
@@ -784,7 +1031,10 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       notes: clip.notes.map((n) => ({ ...n, id: nextId('note') })),
     };
     set({
-      blocks: [...state.blocks, block].sort((a, b) => a.start - b.start),
+      tracks: state.tracks.map((t) =>
+        t.id === trackId ? { ...t, blocks: [...t.blocks, block].sort((a, b) => a.start - b.start) } : t,
+      ),
+      activeTrackId: trackId,
       selectedBlockId: block.id,
       selectedNoteIds: [],
       selectedSegmentStart: null,
@@ -794,10 +1044,12 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     return block.id;
   },
 
-  duplicateNotesToNearestGap: (noteIds) => {
+  duplicateNotesToNearestGap: (trackId, noteIds) => {
     const state = get();
+    const track = state.tracks.find((t) => t.id === trackId);
+    if (!track) return;
     const wanted = new Set(noteIds);
-    const originals = state.blocks.flatMap((b) =>
+    const originals = track.blocks.flatMap((b) =>
       b.notes.filter((n) => wanted.has(n.id)).map((n) => ({ block: b, note: n })),
     );
     if (originals.length === 0) return;
@@ -807,7 +1059,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     const spanLength = Math.max(1, maxEnd - minStart);
 
     // 空き区間の検索も小節数には縛られない（これがそもそもの要望）
-    const gapStart = placeBlock(state.blocks, '', minStart, spanLength, Infinity);
+    const gapStart = placeBlock(track.blocks, '', minStart, spanLength, Infinity);
 
     if (gapStart === null) {
       // 空きが見つからなければ、元の位置に重ねて複製するだけ（フォールバック）
@@ -820,10 +1072,17 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       }
       transact(() =>
         set({
-          blocks: state.blocks.map((b) => {
-            const add = additions.get(b.id);
-            return add ? { ...b, notes: [...b.notes, ...add] } : b;
-          }),
+          tracks: state.tracks.map((t) =>
+            t.id !== trackId
+              ? t
+              : {
+                  ...t,
+                  blocks: t.blocks.map((b) => {
+                    const add = additions.get(b.id);
+                    return add ? { ...b, notes: [...b.notes, ...add] } : b;
+                  }),
+                },
+          ),
           selectedNoteIds: newIds,
         }),
       );
@@ -843,7 +1102,12 @@ export const useProjectStore = create<ProjectState>((set, get) => {
 
     transact(() =>
       set({
-        blocks: [...state.blocks, newBlock].sort((a, b) => a.start - b.start),
+        tracks: state.tracks.map((t) =>
+          t.id === trackId
+            ? { ...t, blocks: [...t.blocks, newBlock].sort((a, b) => a.start - b.start) }
+            : t,
+        ),
+        activeTrackId: trackId,
         selectedBlockId: newBlock.id,
         selectedNoteIds: newBlock.notes.map((n) => n.id),
         selectedSegmentStart: null,
@@ -851,11 +1115,12 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     );
   },
 
-  /* --- ノート --- */
+  /* --- ノート（すべてアクティブトラックに対して働く） --- */
   addNote: (blockId, midi, start, length) => {
     const state = get();
-    const block = state.blocks.find((b) => b.id === blockId);
-    if (!block) return null;
+    const track = state.tracks.find((t) => t.id === state.activeTrackId);
+    const block = track?.blocks.find((b) => b.id === blockId);
+    if (!track || !block) return null;
 
     const pitch = clamp(Math.round(midi), PITCH_MIN, PITCH_MAX);
     const s = clamp(snapStep(start, state.quantize, state.snap), 0, block.length - 1);
@@ -863,8 +1128,10 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     const note: NoteItem = { id: nextId('note'), midi: pitch, start: s, length: len, velocity: 0.8 };
 
     set({
-      blocks: state.blocks.map((b) =>
-        b.id === blockId ? { ...b, notes: [...b.notes, note] } : b,
+      tracks: state.tracks.map((t) =>
+        t.id !== track.id
+          ? t
+          : { ...t, blocks: t.blocks.map((b) => (b.id === blockId ? { ...b, notes: [...b.notes, note] } : b)) },
       ),
       selectedNoteIds: [note.id],
     });
@@ -872,90 +1139,85 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   },
 
   updateNote: (blockId, noteId, patch) =>
-    set((state) => {
-      const block = state.blocks.find((b) => b.id === blockId);
-      if (!block) return {};
-      return {
-        blocks: state.blocks.map((b) => {
-          if (b.id !== blockId) return b;
-          return {
-            ...b,
-            notes: b.notes.map((n) => {
-              if (n.id !== noteId) return n;
-              const merged = { ...n, ...patch };
-              const midi = clamp(Math.round(merged.midi), PITCH_MIN, PITCH_MAX);
-              const start = clamp(Math.round(merged.start), 0, b.length - 1);
-              const length = clamp(Math.round(merged.length), 1, b.length - start);
-              return { ...merged, midi, start, length };
-            }),
-          };
-        }),
-      };
+    updateActiveTrackBlocks((blocks) => {
+      const block = blocks.find((b) => b.id === blockId);
+      if (!block) return null;
+      return blocks.map((b) => {
+        if (b.id !== blockId) return b;
+        return {
+          ...b,
+          notes: b.notes.map((n) => {
+            if (n.id !== noteId) return n;
+            const merged = { ...n, ...patch };
+            const midi = clamp(Math.round(merged.midi), PITCH_MIN, PITCH_MAX);
+            const start = clamp(Math.round(merged.start), 0, b.length - 1);
+            const length = clamp(Math.round(merged.length), 1, b.length - start);
+            return { ...merged, midi, start, length };
+          }),
+        };
+      });
     }),
 
   removeNotes: (ids) =>
-    transact(() =>
-    set((state) => {
-      if (ids.length === 0) return {};
+    transact(() => {
+      if (ids.length === 0) return;
       const doomed = new Set(ids);
-      return {
-        blocks: state.blocks.map((b) =>
+      updateActiveTrackBlocks((blocks) =>
+        blocks.map((b) =>
           b.notes.some((n) => doomed.has(n.id))
             ? { ...b, notes: b.notes.filter((n) => !doomed.has(n.id)) }
             : b,
         ),
-        selectedNoteIds: state.selectedNoteIds.filter((id) => !doomed.has(id)),
-      };
+      );
+      set((state) => ({ selectedNoteIds: state.selectedNoteIds.filter((id) => !doomed.has(id)) }));
     }),
-    ),
 
   removeSelectedNotes: () => get().removeNotes(get().selectedNoteIds),
 
   clearNotes: (blockId) =>
-    transact(() =>
-    set((state) => {
-      const block = state.blocks.find((b) => b.id === blockId);
+    transact(() => {
+      const track = get().tracks.find((t) => t.id === get().activeTrackId);
+      const block = track?.blocks.find((b) => b.id === blockId);
       const cleared = new Set(block?.notes.map((n) => n.id) ?? []);
-      return {
-        blocks: state.blocks.map((b) => (b.id === blockId ? { ...b, notes: [] } : b)),
-        selectedNoteIds: state.selectedNoteIds.filter((id) => !cleared.has(id)),
-      };
+      updateActiveTrackBlocks((blocks) =>
+        blocks.map((b) => (b.id === blockId ? { ...b, notes: [] } : b)),
+      );
+      set((state) => ({ selectedNoteIds: state.selectedNoteIds.filter((id) => !cleared.has(id)) }));
     }),
-    ),
 
   setSegmentNotes: (blockId, segStart, segLength, midis) =>
-    transact(() =>
-    set((state) => ({
-      blocks: state.blocks.map((b) => {
-        if (b.id !== blockId) return b;
-        const segEnd = segStart + segLength;
-        // セグメント範囲に鳴っているノートだけ差し替える
-        const kept = b.notes.filter((n) => n.start >= segEnd || n.start + n.length <= segStart);
-        const added = midis
-          .filter((mi) => mi >= PITCH_MIN && mi <= PITCH_MAX)
-          .map((midi) => ({
-            id: nextId('note'),
-            midi,
-            start: segStart,
-            length: segLength,
-            velocity: 0.8,
-          }));
-        return { ...b, notes: [...kept, ...added] };
-      }),
-      selectedNoteIds: [],
-    })),
-    ),
+    transact(() => {
+      updateActiveTrackBlocks((blocks) =>
+        blocks.map((b) => {
+          if (b.id !== blockId) return b;
+          const segEnd = segStart + segLength;
+          // セグメント範囲に鳴っているノートだけ差し替える
+          const kept = b.notes.filter((n) => n.start >= segEnd || n.start + n.length <= segStart);
+          const added = midis
+            .filter((mi) => mi >= PITCH_MIN && mi <= PITCH_MAX)
+            .map((midi) => ({
+              id: nextId('note'),
+              midi,
+              start: segStart,
+              length: segLength,
+              velocity: 0.8,
+            }));
+          return { ...b, notes: [...kept, ...added] };
+        }),
+      );
+      set({ selectedNoteIds: [] });
+    }),
 
   /**
    * setSegmentNotes と同じ差し替えを、複数セグメントぶんまとめて1回の Undo で行う。
    * ボイシングの一括変更（チェーン適用）などで、呼び出し側が内容を計算済みの場合に使う。
    */
   applyBulkSegmentNotes: (updates) =>
-    transact(() =>
-      set((state) => {
-        let blocks = state.blocks;
+    transact(() => {
+      updateActiveTrackBlocks((blocks) => {
+        let next = blocks;
         for (const u of updates) {
-          blocks = blocks.map((b) => {
+          next = next.map((b) => {
             if (b.id !== u.blockId) return b;
             const segEnd = u.segStart + u.segLength;
             const kept = b.notes.filter((n) => n.start >= segEnd || n.start + n.length <= u.segStart);
@@ -971,9 +1233,10 @@ export const useProjectStore = create<ProjectState>((set, get) => {
             return { ...b, notes: [...kept, ...added] };
           });
         }
-        return { blocks, selectedNoteIds: [] };
-      }),
-    ),
+        return next;
+      });
+      set({ selectedNoteIds: [] });
+    }),
 
   /* --- 選択 --- */
   selectNotes: (ids, additive = false) =>
@@ -993,17 +1256,19 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   clearNoteSelection: () => set({ selectedNoteIds: [] }),
 
   selectAllNotesInBlock: (blockId) =>
-    set((state) => ({
-      selectedNoteIds: state.blocks.find((b) => b.id === blockId)?.notes.map((n) => n.id) ?? [],
-    })),
+    set((state) => {
+      const track = state.tracks.find((t) => t.id === state.activeTrackId);
+      return { selectedNoteIds: track?.blocks.find((b) => b.id === blockId)?.notes.map((n) => n.id) ?? [] };
+    }),
 
   copySelectedNotes: () => {
     const state = get();
+    const track = state.tracks.find((t) => t.id === state.activeTrackId);
     const selected = new Set(state.selectedNoteIds);
-    if (selected.size === 0) return;
+    if (!track || selected.size === 0) return;
 
     const entries: Array<{ absStart: number; midi: number; length: number; velocity: number }> = [];
-    for (const b of state.blocks) {
+    for (const b of track.blocks) {
       for (const n of b.notes) {
         if (selected.has(n.id)) {
           entries.push({ absStart: b.start + n.start, midi: n.midi, length: n.length, velocity: n.velocity });
@@ -1033,8 +1298,9 @@ export const useProjectStore = create<ProjectState>((set, get) => {
    */
   pasteNotesAt: (step) => {
     const state = get();
+    const track = state.tracks.find((t) => t.id === state.activeTrackId);
     const clip = state.clipboard;
-    if (!clip || clip.kind !== 'notes') return;
+    if (!track || !clip || clip.kind !== 'notes') return;
 
     get().beginTransaction();
     const anchorStep = Math.round(step);
@@ -1043,7 +1309,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
 
     for (const entry of clip.entries) {
       const absStart = anchorStep + entry.offset;
-      const target = resolveNoteTarget(state.blocks, absStart);
+      const target = resolveNoteTarget(track.blocks, absStart);
       if (!target) continue;
       const relStart = clamp(absStart - target.start, 0, Math.max(0, target.length - 1));
       const relLength = clamp(entry.length, 1, target.length - relStart);
@@ -1064,10 +1330,17 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     }
 
     set({
-      blocks: state.blocks.map((b) => {
-        const add = additions.get(b.id);
-        return add ? { ...b, notes: [...b.notes, ...add] } : b;
-      }),
+      tracks: state.tracks.map((t) =>
+        t.id !== track.id
+          ? t
+          : {
+              ...t,
+              blocks: t.blocks.map((b) => {
+                const add = additions.get(b.id);
+                return add ? { ...b, notes: [...b.notes, ...add] } : b;
+              }),
+            },
+      ),
       selectedNoteIds: newIds,
     });
     get().endTransaction();
@@ -1075,11 +1348,12 @@ export const useProjectStore = create<ProjectState>((set, get) => {
 
   duplicateSelectedNotes: () => {
     const state = get();
+    const track = state.tracks.find((t) => t.id === state.activeTrackId);
     const selected = new Set(state.selectedNoteIds);
-    if (selected.size === 0) return [];
+    if (!track || selected.size === 0) return [];
 
     const clones: NoteDragSnapshot[] = [];
-    const blocks = state.blocks.map((b) => {
+    const blocks = track.blocks.map((b) => {
       const targets = b.notes.filter((n) => selected.has(n.id));
       if (targets.length === 0) return b;
       const copies = targets.map((n) => {
@@ -1097,7 +1371,10 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     });
 
     // 複製した側を掴んで動かす。元のノートはその場に残る。
-    set({ blocks, selectedNoteIds: clones.map((c) => c.noteId) });
+    set({
+      tracks: state.tracks.map((t) => (t.id === track.id ? { ...t, blocks } : t)),
+      selectedNoteIds: clones.map((c) => c.noteId),
+    });
     return clones;
   },
 
@@ -1106,11 +1383,12 @@ export const useProjectStore = create<ProjectState>((set, get) => {
    * どのブロックへでも跨いで移動できる（同じ小節縛りをここで外している）。
    * 移動量そのものはプロジェクト全体の範囲でのみクランプし、
    * 実際にどのブロックへ属するかは着地点ごとに resolveNoteTarget で解決する。
+   * トラックを跨いだ移動はしない（アクティブトラックの中で完結する）。
    */
   applyNoteDrag: (snapshots, dStep, dMidi) =>
-    set((state) => {
-      if (snapshots.length === 0) return {};
-      const blocksById = new Map(state.blocks.map((b) => [b.id, b]));
+    updateActiveTrackBlocks((blocks) => {
+      if (snapshots.length === 0) return null;
+      const blocksById = new Map(blocks.map((b) => [b.id, b]));
       const absStartOf = (s: NoteDragSnapshot) => (blocksById.get(s.blockId)?.start ?? 0) + s.start;
 
       // ノートの移動範囲も小節数には縛られない
@@ -1126,7 +1404,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       // 元のノート実体（velocity 等）を集めておく
       const originals = new Map<string, NoteItem>();
       const movingIds = new Set(snapshots.map((s) => s.noteId));
-      for (const b of state.blocks) {
+      for (const b of blocks) {
         for (const n of b.notes) {
           if (movingIds.has(n.id)) originals.set(n.id, n);
         }
@@ -1139,7 +1417,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
         const original = originals.get(s.noteId);
         if (!original) continue;
         const absStart = absStartOf(s) + step;
-        const target = resolveNoteTarget(state.blocks, absStart);
+        const target = resolveNoteTarget(blocks, absStart);
         if (!target) continue; // 属せるブロックが無ければその場に残す
 
         relocated.add(s.noteId);
@@ -1154,21 +1432,18 @@ export const useProjectStore = create<ProjectState>((set, get) => {
         additions.set(target.id, [...(additions.get(target.id) ?? []), note]);
       }
 
-      return {
-        blocks: state.blocks.map((b) => {
-          const kept = b.notes.filter((n) => !relocated.has(n.id));
-          const add = additions.get(b.id);
-          if (!add && kept.length === b.notes.length) return b;
-          return { ...b, notes: add ? [...kept, ...add] : kept };
-        }),
-      };
+      return blocks.map((b) => {
+        const kept = b.notes.filter((n) => !relocated.has(n.id));
+        const add = additions.get(b.id);
+        if (!add && kept.length === b.notes.length) return b;
+        return { ...b, notes: add ? [...kept, ...add] : kept };
+      });
     }),
 
   applyNoteResize: (snapshots, dLength) =>
-    set((state) => {
-      if (snapshots.length === 0) return {};
-      const lengthOf = (blockId: string) =>
-        state.blocks.find((b) => b.id === blockId)?.length ?? 0;
+    updateActiveTrackBlocks((blocks) => {
+      if (snapshots.length === 0) return null;
+      const lengthOf = (blockId: string) => blocks.find((b) => b.id === blockId)?.length ?? 0;
 
       const delta = commonDelta(snapshots, lengthOf, dLength, (s, blockLength) => [
         1 - s.length,
@@ -1176,64 +1451,63 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       ]);
 
       const byId = new Map(snapshots.map((s) => [s.noteId, s]));
-      return {
-        blocks: state.blocks.map((b) => {
-          if (!b.notes.some((n) => byId.has(n.id))) return b;
-          return {
-            ...b,
-            notes: b.notes.map((n) => {
-              const snap = byId.get(n.id);
-              if (!snap) return n;
-              return { ...n, length: snap.length + delta };
-            }),
-          };
-        }),
-      };
+      return blocks.map((b) => {
+        if (!b.notes.some((n) => byId.has(n.id))) return b;
+        return {
+          ...b,
+          notes: b.notes.map((n) => {
+            const snap = byId.get(n.id);
+            if (!snap) return n;
+            return { ...n, length: snap.length + delta };
+          }),
+        };
+      });
     }),
 
   applyNoteResizeLeft: (snapshots, dStart) =>
-    set((state) => {
-      if (snapshots.length === 0) return {};
+    updateActiveTrackBlocks((blocks) => {
+      if (snapshots.length === 0) return null;
       // 末尾（start + length）を固定し、start を動かした分だけ length を逆方向に変える。
       // ブロック左端(0)より前へは出さず、長さは最低1 step を保つ。
       const delta = commonDelta(snapshots, () => 0, dStart, (s) => [-s.start, s.length - 1]);
 
       const byId = new Map(snapshots.map((s) => [s.noteId, s]));
-      return {
-        blocks: state.blocks.map((b) => {
-          if (!b.notes.some((n) => byId.has(n.id))) return b;
-          return {
-            ...b,
-            notes: b.notes.map((n) => {
-              const snap = byId.get(n.id);
-              if (!snap) return n;
-              return { ...n, start: snap.start + delta, length: snap.length - delta };
-            }),
-          };
-        }),
-      };
+      return blocks.map((b) => {
+        if (!b.notes.some((n) => byId.has(n.id))) return b;
+        return {
+          ...b,
+          notes: b.notes.map((n) => {
+            const snap = byId.get(n.id);
+            if (!snap) return n;
+            return { ...n, start: snap.start + delta, length: snap.length - delta };
+          }),
+        };
+      });
     }),
 
   clearAll: () =>
-    transact(() =>
+    transact(() => {
+      updateActiveTrackBlocks(() => []);
       set({
-        blocks: [],
         selectedBlockId: null,
         selectedBlockIds: [],
         selectedNoteIds: [],
         selectedSegmentStart: null,
-      }),
-    ),
+      });
+    }),
 
   /**
    * ファイルから読み込んだ内容を丸ごと反映する。
-   * ブロック / 小節数 / 拍子は Undo 対象（誤って読み込んでも Ctrl+Z で戻せる）。
-   * それ以外の設定は他のセッターと同様に Undo 対象外。
+   * トラックの中身（ブロック） / 小節数 / 拍子は Undo 対象（誤って読み込んでも Ctrl+Z で戻せる）。
+   * トラックの設定（音源・音量など）や他の設定は、他のセッターと同様に Undo 対象外。
    */
   loadProject: (file) =>
-    transact(() =>
+    transact(() => {
+      const { tracks, trackSettings } = splitSerializedTracks(file.tracks);
       set({
-        blocks: file.blocks,
+        tracks,
+        trackSettings,
+        activeTrackId: tracks[0]?.id ?? get().activeTrackId,
         bars: file.bars,
         rangeStart: file.rangeStart ?? 0,
         timeSignature: file.timeSignature,
@@ -1241,21 +1515,22 @@ export const useProjectStore = create<ProjectState>((set, get) => {
         chordResolution: file.chordResolution,
         quantize: file.quantize,
         snap: file.snap,
-        instrumentId: file.instrumentId,
-        volumeDb: file.volumeDb,
         selectedBlockId: null,
         selectedBlockIds: [],
         selectedNoteIds: [],
         selectedSegmentStart: null,
         clipboard: null,
-      }),
-    ),
+      });
+    }),
 
   /** 起動時の既定コード進行・設定へ戻す（clearAll と違い、内容だけでなく設定も既定値に戻る） */
   resetToDefault: () =>
-    transact(() =>
+    transact(() => {
+      const track = makeDefaultTrack();
       set({
-        blocks: seedBlocks(),
+        tracks: [track],
+        trackSettings: { [track.id]: makeDefaultTrackSettings() },
+        activeTrackId: track.id,
         bars: DEFAULT_BARS,
         rangeStart: 0,
         timeSignature: DEFAULT_SIG,
@@ -1263,15 +1538,13 @@ export const useProjectStore = create<ProjectState>((set, get) => {
         chordResolution: DEFAULT_CHORD_RESOLUTION,
         quantize: DEFAULT_QUANTIZE,
         snap: true,
-        instrumentId: DEFAULT_INSTRUMENT_ID,
-        volumeDb: DEFAULT_VOLUME_DB,
         selectedBlockId: null,
         selectedBlockIds: [],
         selectedNoteIds: [],
         selectedSegmentStart: null,
         clipboard: null,
-      }),
-    ),
+      });
+    }),
 
   /* --- 履歴 --- */
   beginTransaction: () =>
@@ -1330,6 +1603,16 @@ export const useProjectStore = create<ProjectState>((set, get) => {
  * 書き込むのは「作品」に相当する項目だけで、選択状態や表示倍率などは含めない
  * （そこまで戻す必要は無く、むしろ再読込のたびに選択が残っていると不自然なため）。
  */
+export function mergeTracksForSave(state: {
+  tracks: Track[];
+  trackSettings: Record<string, TrackSettings>;
+}): SerializedTrack[] {
+  return state.tracks.map((t) => {
+    const settings = state.trackSettings[t.id] ?? makeDefaultTrackSettings();
+    return { ...t, ...settings };
+  });
+}
+
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 useProjectStore.subscribe((state) => {
   if (autosaveTimer !== null) clearTimeout(autosaveTimer);
@@ -1342,9 +1625,7 @@ useProjectStore.subscribe((state) => {
       chordResolution: state.chordResolution,
       quantize: state.quantize,
       snap: state.snap,
-      instrumentId: state.instrumentId,
-      volumeDb: state.volumeDb,
-      blocks: state.blocks,
+      tracks: mergeTracksForSave(state),
     });
   }, 400);
 });

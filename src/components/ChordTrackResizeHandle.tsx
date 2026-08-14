@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useProjectStore } from '../store/useProjectStore';
+import { DEFAULT_CHORD_TRACK_HEIGHT } from '../lib/grid';
 import { capturePointer, releasePointer } from '../lib/pointer';
 import { useT } from '../i18n/useT';
 import { strings } from '../i18n/strings';
@@ -12,8 +13,11 @@ import './ChordTrackResizeHandle.css';
  * ズームとは独立した、純粋な表示レイアウトの好みなので Undo 対象にはしない。
  */
 export function ChordTrackResizeHandle() {
-  const chordTrackHeight = useProjectStore((s) => s.chordTrackHeight);
-  const setChordTrackHeight = useProjectStore((s) => s.setChordTrackHeight);
+  const activeTrackId = useProjectStore((s) => s.activeTrackId);
+  const chordTrackHeight = useProjectStore(
+    (s) => s.trackSettings[s.activeTrackId]?.height ?? DEFAULT_CHORD_TRACK_HEIGHT,
+  );
+  const setTrackHeight = useProjectStore((s) => s.setTrackHeight);
   const { t } = useT();
   const dragRef = useRef<{ originY: number; originHeight: number } | null>(null);
 
@@ -30,9 +34,9 @@ export function ChordTrackResizeHandle() {
     (e: ReactPointerEvent<HTMLDivElement>) => {
       const drag = dragRef.current;
       if (!drag) return;
-      setChordTrackHeight(drag.originHeight + (e.clientY - drag.originY));
+      setTrackHeight(activeTrackId, drag.originHeight + (e.clientY - drag.originY));
     },
-    [setChordTrackHeight],
+    [activeTrackId, setTrackHeight],
   );
 
   const onPointerUp = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {

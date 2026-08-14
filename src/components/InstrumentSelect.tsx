@@ -9,10 +9,11 @@ import './InstrumentSelect.css';
  * サンプルの読み込み中も内蔵シンセで鳴り続けるので、選んだ直後から操作できる。
  */
 export function InstrumentSelect() {
-  const instrumentId = useProjectStore((s) => s.instrumentId);
-  const setInstrument = useProjectStore((s) => s.setInstrument);
-  const loading = useProjectStore((s) => s.instrumentLoading);
-  const error = useProjectStore((s) => s.instrumentError);
+  const activeTrackId = useProjectStore((s) => s.activeTrackId);
+  const instrumentId = useProjectStore((s) => s.trackSettings[s.activeTrackId]?.instrumentId ?? '');
+  const setTrackInstrument = useProjectStore((s) => s.setTrackInstrument);
+  const loading = useProjectStore((s) => s.trackInstrumentLoading[s.activeTrackId] ?? false);
+  const error = useProjectStore((s) => s.trackInstrumentError[s.activeTrackId] ?? false);
   const { t } = useT();
   const is = strings.instrumentSelect;
 
@@ -26,7 +27,7 @@ export function InstrumentSelect() {
           id="instrument-select"
           className="cb-select instrument-select__input"
           value={instrumentId}
-          onChange={(e) => setInstrument(e.target.value)}
+          onChange={(e) => setTrackInstrument(activeTrackId, e.target.value)}
         >
           {INSTRUMENT_GROUPS.map((group) => (
             <optgroup key={group.label.ja} label={t(group.label)}>

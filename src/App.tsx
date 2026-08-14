@@ -44,6 +44,7 @@ export default function App() {
 
   const editorTool = useProjectStore((s) => s.editorTool);
   const setEditorTool = useProjectStore((s) => s.setEditorTool);
+  const activeTrackId = useProjectStore((s) => s.activeTrackId);
   const selectedBlockId = useProjectStore((s) => s.selectedBlockId);
   const selectedNoteIds = useProjectStore((s) => s.selectedNoteIds);
   const removeBlock = useProjectStore((s) => s.removeBlock);
@@ -92,7 +93,7 @@ export default function App() {
             return;
           case 'KeyC':
             if (selectedNoteIds.length > 0) copySelectedNotes();
-            else if (selectedBlockId) copyBlock(selectedBlockId);
+            else if (selectedBlockId) copyBlock(activeTrackId, selectedBlockId);
             else return;
             e.preventDefault();
             return;
@@ -101,7 +102,7 @@ export default function App() {
             e.preventDefault();
             const step = usePlayheadStore.getState().step;
             if (clipboard.kind === 'notes') pasteNotesAt(step);
-            else pasteBlockAt(step);
+            else pasteBlockAt(activeTrackId, step);
             return;
           }
         }
@@ -121,7 +122,7 @@ export default function App() {
         case 'Backspace':
           e.preventDefault();
           if (selectedNoteIds.length > 0) removeSelectedNotes();
-          else if (selectedBlockId) removeBlock(selectedBlockId);
+          else if (selectedBlockId) removeBlock(activeTrackId, selectedBlockId);
           break;
         case 'Digit1':
           setEditorTool('draw');
@@ -143,6 +144,7 @@ export default function App() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
+    activeTrackId,
     helpOpen,
     isPlaying,
     pause,

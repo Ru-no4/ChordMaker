@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { audioEngine } from '../lib/audio';
 import { contentExtentSteps, stepsPerBar, totalSteps } from '../lib/grid';
-import { flattenNotes, useProjectStore } from '../store/useProjectStore';
+import { flattenNotes, selectActiveTrackBlocks, useProjectStore } from '../store/useProjectStore';
 import { usePlayheadStore } from '../store/usePlayheadStore';
 
 /** ストアの状態を Tone.js トランスポートへ反映し、再生操作を提供する */
@@ -11,12 +11,13 @@ export function useTransport() {
   const bars = useProjectStore((s) => s.bars);
   const rangeStart = useProjectStore((s) => s.rangeStart);
   const loop = useProjectStore((s) => s.loop);
-  const blocks = useProjectStore((s) => s.blocks);
+  const blocks = useProjectStore(selectActiveTrackBlocks);
   const volumeDb = useProjectStore((s) => s.volumeDb);
   const isPlaying = useProjectStore((s) => s.isPlaying);
   const setPlaying = useProjectStore((s) => s.setPlaying);
-  const instrumentId = useProjectStore((s) => s.instrumentId);
-  const setInstrumentStatus = useProjectStore((s) => s.setInstrumentStatus);
+  const activeTrackId = useProjectStore((s) => s.activeTrackId);
+  const instrumentId = useProjectStore((s) => s.trackSettings[s.activeTrackId]?.instrumentId ?? '');
+  const setTrackInstrumentStatus = useProjectStore((s) => s.setTrackInstrumentStatus);
   const setStep = usePlayheadStore((s) => s.setStep);
 
   const total = totalSteps(timeSignature, bars);
@@ -61,27 +62,27 @@ export function useTransport() {
       // audioEngine.instrumentId を更新済みのままここへ来ることがある。
       // その場合の .then() は cleanup で握りつぶされて呼ばれないため、
       // ここで明示的に読み込み中フラグを下ろしておかないと固まったままになる。
-      setInstrumentStatus(false);
+      setTrackInstrumentStatus(activeTrackId, false);
       return;
     }
 
     let cancelled = false;
-    setInstrumentStatus(true);
+    setTrackInstrumentStatus(activeTrackId, true);
     audioEngine
       .loadInstrument(instrumentId)
       .then(() => {
-        if (!cancelled) setInstrumentStatus(false);
+        if (!cancelled) setTrackInstrumentStatus(activeTrackId, false);
       })
       .catch((error: unknown) => {
         if (cancelled) return;
         // 失敗しても内蔵シンセで鳴り続ける
-        setInstrumentStatus(false, true);
+        setTrackInstrumentStatus(activeTrackId, false, true);
         console.error('音源の読み込みに失敗しました', error);
       });
     return () => {
       cancelled = true;
     };
-  }, [instrumentId, setInstrumentStatus]);
+  }, [activeTrackId, instrumentId, setTrackInstrumentStatus]);
 
   /* --- 再生位置の追従 --- */
   const rafRef = useRef<number | null>(null);
