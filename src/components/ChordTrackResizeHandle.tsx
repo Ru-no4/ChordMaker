@@ -1,23 +1,21 @@
 import { useCallback, useRef } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useProjectStore } from '../store/useProjectStore';
-import { DEFAULT_CHORD_TRACK_HEIGHT } from '../lib/grid';
 import { capturePointer, releasePointer } from '../lib/pointer';
 import { useT } from '../i18n/useT';
 import { strings } from '../i18n/strings';
 import './ChordTrackResizeHandle.css';
 
 /**
- * コードトラックとピアノロールの間の境界。上下にドラッグしてコードトラックの
- * 表示高さを調整する（下限は既定の表示高さ、上限はその3倍。lib/grid.ts 参照）。
+ * コードトラックとピアノロールの間の境界。上下にドラッグしてコードトラック
+ * 「エリア」（全レーンをまとめて表示する領域）の表示高さを調整する
+ * （下限は既定ズームでのレーン1本ぶんの高さ、上限は514px。lib/grid.ts 参照）。
+ * 個々のレーンの高さは縦ズーム（chordZoomY）から決まるので、ここでは触らない。
  * ズームとは独立した、純粋な表示レイアウトの好みなので Undo 対象にはしない。
  */
 export function ChordTrackResizeHandle() {
-  const activeTrackId = useProjectStore((s) => s.activeTrackId);
-  const chordTrackHeight = useProjectStore(
-    (s) => s.trackSettings[s.activeTrackId]?.height ?? DEFAULT_CHORD_TRACK_HEIGHT,
-  );
-  const setTrackHeight = useProjectStore((s) => s.setTrackHeight);
+  const chordTrackAreaHeight = useProjectStore((s) => s.chordTrackAreaHeight);
+  const setChordTrackAreaHeight = useProjectStore((s) => s.setChordTrackAreaHeight);
   const { t } = useT();
   const dragRef = useRef<{ originY: number; originHeight: number } | null>(null);
 
@@ -25,18 +23,18 @@ export function ChordTrackResizeHandle() {
     (e: ReactPointerEvent<HTMLDivElement>) => {
       if (e.button !== 0) return;
       capturePointer(e.currentTarget, e.pointerId);
-      dragRef.current = { originY: e.clientY, originHeight: chordTrackHeight };
+      dragRef.current = { originY: e.clientY, originHeight: chordTrackAreaHeight };
     },
-    [chordTrackHeight],
+    [chordTrackAreaHeight],
   );
 
   const onPointerMove = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       const drag = dragRef.current;
       if (!drag) return;
-      setTrackHeight(activeTrackId, drag.originHeight + (e.clientY - drag.originY));
+      setChordTrackAreaHeight(drag.originHeight + (e.clientY - drag.originY));
     },
-    [activeTrackId, setTrackHeight],
+    [setChordTrackAreaHeight],
   );
 
   const onPointerUp = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {

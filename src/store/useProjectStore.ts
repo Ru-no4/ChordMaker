@@ -1,13 +1,15 @@
 import { create } from 'zustand';
 import {
-  CHORD_TRACK_HEIGHT_MAX,
-  CHORD_TRACK_HEIGHT_MIN,
-  DEFAULT_CHORD_TRACK_HEIGHT,
+  CHORD_TRACK_AREA_HEIGHT_MAX,
+  CHORD_TRACK_AREA_HEIGHT_MIN,
+  DEFAULT_CHORD_TRACK_AREA_HEIGHT,
+  DEFAULT_CHORD_ZOOM_Y,
   ZOOM_X_MAX,
   ZOOM_X_MIN,
   ZOOM_Y_MAX,
   ZOOM_Y_MIN,
   clamp,
+  laneHeight,
   snapLength,
   snapStep,
   stepsPerBar,
@@ -51,6 +53,12 @@ export interface Track {
   id: string;
   name: string;
   color: string;
+  /**
+   * 'chord' はコード判定・コード名表記を行う従来通りのトラック。
+   * 'notes' はコード判定を行わず、ノートをミニプレビューで表示するだけの
+   * 通常トラック（従来のDAWのピアノロールプレビューに近い）。
+   */
+  kind: 'chord' | 'notes';
   blocks: ChordBlockItem[];
 }
 
@@ -60,8 +68,12 @@ export interface TrackSettings {
   volumeDb: number;
   muted: boolean;
   solo: boolean;
-  /** トラックの表示高さ(px)。境界のドラッグで手動調整する */
-  height: number;
+  /**
+   * トラック単位のレーン高さ(px)の上書き。null なら共有の縦ズーム（chordZoomY）
+   * から一律に決まる高さをそのまま使う。ChordTrackResizeHandle（トラック
+   * エリア全体の高さ調整）と同じ考え方をトラック単位に一般化したもの。
+   */
+  laneHeightPx: number | null;
 }
 
 /** 編集ツール。すべての操作がツールだけで到達できるようにする。 */
@@ -110,6 +122,15 @@ const DEFAULT_BPM = 160;
 const DEFAULT_QUANTIZE: QuantizeValue = 16;
 const DEFAULT_CHORD_RESOLUTION: ChordResolution = 4;
 const DEFAULT_VOLUME_DB = -30;
+/**
+ * トラック単位フェーダーの既定値。マスターフェーダー（DEFAULT_VOLUME_DB）とは
+ * 別に、音声経路では synth/サンプル → トラックフェーダー → reverb → マスター →
+ * limiter の順に直列に掛かる。ここを DEFAULT_VOLUME_DB と同じ値にすると
+ * 「マスターとトラックの両方で-30dB」が重なって従来の約2倍（-60dB相当）
+ * 静かになってしまうため、トラック側は 0dB（素通し）を既定にし、
+ * 音量調整はマスターフェーダー1つに任せる。
+ */
+const DEFAULT_TRACK_VOLUME_DB = 0;
 const DEFAULT_TRACK_NAME = 'CHORD TRACK';
 const DEFAULT_TRACK_COLOR = '#4f8cff';
 /** 「小節数」入力の安全な上限（意味のある業務的な上限ではなく、暴走防止のための値） */
@@ -173,16 +194,22 @@ function seedBlocks(): ChordBlockItem[] {
 function makeDefaultTrackSettings(): TrackSettings {
   return {
     instrumentId: DEFAULT_INSTRUMENT_ID,
-    volumeDb: DEFAULT_VOLUME_DB,
+    volumeDb: DEFAULT_TRACK_VOLUME_DB,
     muted: false,
     solo: false,
-    height: DEFAULT_CHORD_TRACK_HEIGHT,
+    laneHeightPx: null,
   };
 }
 
 /** 既定の単一トラック（起動時・初期化時に使う） */
 function makeDefaultTrack(): Track {
-  return { id: nextId('trk'), name: DEFAULT_TRACK_NAME, color: DEFAULT_TRACK_COLOR, blocks: seedBlocks() };
+  return {
+    id: nextId('trk'),
+    name: DEFAULT_TRACK_NAME,
+    color: DEFAULT_TRACK_COLOR,
+    kind: 'chord',
+    blocks: seedBlocks(),
+  };
 }
 
 /**
@@ -215,9 +242,10 @@ export function isDefaultProjectState(s: {
     s.snap === true &&
     !!settings &&
     settings.instrumentId === DEFAULT_INSTRUMENT_ID &&
-    settings.volumeDb === DEFAULT_VOLUME_DB &&
+    settings.volumeDb === DEFAULT_TRACK_VOLUME_DB &&
     !settings.muted &&
     !settings.solo &&
+    settings.laneHeightPx === null &&
     isSeedBlocks(track.blocks)
   );
 }
@@ -306,8 +334,15 @@ interface ProjectState {
   zoomX: number;
   /** ピアノロールの縦方向表示倍率 */
   zoomY: number;
-  /** コードトラックの縦方向表示倍率（ピアノロールとは独立） */
+  /** コードトラックの縦方向表示倍率（ピアノロールとは独立）。各レーンの高さはこの値から一律に決まる */
   chordZoomY: number;
+  /**
+   * コードトラック「エリア」（複数レーンをまとめて表示する領域）の表示高さ。
+   * 境界のドラッグで手動調整する。個々のレーンの高さとは別物 — レーンは
+   * chordZoomY から決まり、トラックが増えればこのエリアの中で縦に積み重なって
+   * スクロールする。
+   */
+  chordTrackAreaHeight: number;
   /** 再生ヘッドを画面中央に追従させる */
   followPlayhead: boolean;
 
@@ -365,16 +400,23 @@ interface ProjectState {
   toggleFollowPlayhead: () => void;
 
   /* --- トラック --- */
-  addTrack: () => string;
+  addTrack: (kind: 'chord' | 'notes') => string;
   removeTrack: (trackId: string) => void;
   setActiveTrack: (trackId: string) => void;
   setTrackInstrument: (trackId: string, instrumentId: string) => void;
   setTrackInstrumentStatus: (trackId: string, loading: boolean, error?: boolean) => void;
   setTrackVolumeDb: (trackId: string, db: number) => void;
-  setTrackHeight: (trackId: string, px: number) => void;
+  /** コードトラックエリア全体の高さ（トラック単位ではない） */
+  setChordTrackAreaHeight: (px: number) => void;
   toggleTrackMute: (trackId: string) => void;
   toggleTrackSolo: (trackId: string) => void;
   renameTrack: (trackId: string, name: string) => void;
+  setTrackColor: (trackId: string, color: string) => void;
+  /** trackId を現在位置から delta ぶんだけ前後に動かす（範囲外は端で止まる） */
+  moveTrackBy: (trackId: string, delta: number) => void;
+  /** トラック単位のレーン高さ上書き(px)。共有ズームに戻すには resetTrackLaneHeight を使う */
+  setTrackLaneHeight: (trackId: string, px: number) => void;
+  resetTrackLaneHeight: (trackId: string) => void;
 
   /** ドラッグの開始・終了で呼び、その間の変更を1つの履歴にまとめる */
   beginTransaction: () => void;
@@ -559,6 +601,14 @@ export function selectActiveTrackBlocks(s: {
   return s.tracks.find((t) => t.id === s.activeTrackId)?.blocks ?? EMPTY_BLOCKS;
 }
 
+/** アクティブトラックそのもの。kind/name/color も含めて見たい場合はこちらを使う。 */
+export function selectActiveTrack(s: {
+  tracks: Track[];
+  activeTrackId: string;
+}): Track | undefined {
+  return s.tracks.find((t) => t.id === s.activeTrackId);
+}
+
 /** file.tracks（設定込みの保存形式）を tracks/trackSettings のランタイム形式へ分解する */
 function splitSerializedTracks(
   serialized: SerializedTrack[],
@@ -566,13 +616,13 @@ function splitSerializedTracks(
   const tracks: Track[] = [];
   const trackSettings: Record<string, TrackSettings> = {};
   for (const t of serialized) {
-    tracks.push({ id: t.id, name: t.name, color: t.color, blocks: t.blocks });
+    tracks.push({ id: t.id, name: t.name, color: t.color, kind: t.kind, blocks: t.blocks });
     trackSettings[t.id] = {
       instrumentId: t.instrumentId,
       volumeDb: t.volumeDb,
       muted: t.muted,
       solo: t.solo,
-      height: t.height,
+      laneHeightPx: t.laneHeightPx ?? null,
     };
   }
   return { tracks, trackSettings };
@@ -622,7 +672,8 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   editorTool: 'draw',
   zoomX: 0.5,
   zoomY: 0.8, // ZOOM_FACTOR 1段階分ズームアウトした状態を初期表示にする
-  chordZoomY: 0.8,
+  chordZoomY: DEFAULT_CHORD_ZOOM_Y,
+  chordTrackAreaHeight: DEFAULT_CHORD_TRACK_AREA_HEIGHT,
   followPlayhead: true,
 
   past: [],
@@ -704,15 +755,29 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     set((s) => ({ zoomY: clamp(s.zoomY * factor, ZOOM_Y_MIN, ZOOM_Y_MAX) })),
   chordZoomYBy: (factor) =>
     set((s) => ({ chordZoomY: clamp(s.chordZoomY * factor, ZOOM_Y_MIN, ZOOM_Y_MAX) })),
-  resetZoom: () => set({ zoomX: 0.5, zoomY: 0.8, chordZoomY: 0.8 }),
+  resetZoom: () => set({ zoomX: 0.5, zoomY: 0.8, chordZoomY: DEFAULT_CHORD_ZOOM_Y }),
   toggleFollowPlayhead: () => set((s) => ({ followPlayhead: !s.followPlayhead })),
 
   /* --- トラック --- */
-  addTrack: () => {
+  addTrack: (kind) => {
+    let name: string;
+    if (kind === 'chord') {
+      // コードトラックの追加は「トラック一覧にコードトラックが1本も無い」
+      // ときにしか選べない導線なので、名前の重複を気にする必要はない。
+      name = DEFAULT_TRACK_NAME;
+    } else {
+      // 「TRACK N」で最初に空いている番号を使う（詰めて番号を振る）。
+      // 例: TRACK 1 と TRACK 5 だけがある場合、次に作られるのは TRACK 2。
+      const existingNames = new Set(get().tracks.map((t) => t.name));
+      let n = 1;
+      while (existingNames.has(`TRACK ${n}`)) n++;
+      name = `TRACK ${n}`;
+    }
     const track: Track = {
       id: nextId('trk'),
-      name: `TRACK ${get().tracks.length + 1}`,
+      name,
       color: DEFAULT_TRACK_COLOR,
+      kind,
       blocks: [],
     };
     transact(() =>
@@ -750,7 +815,18 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     ),
 
   setActiveTrack: (trackId) =>
-    set((s) => (s.tracks.some((t) => t.id === trackId) ? { activeTrackId: trackId } : {})),
+    set((s) => {
+      if (!s.tracks.some((t) => t.id === trackId) || s.activeTrackId === trackId) return {};
+      // 別トラックへ切り替えたら選択状態も破棄する。残したままだと
+      // 非アクティブなトラック側にだけ選択ハイライトが残り、ピアノロールは
+      // 何も選択されていない、という食い違いが起きるため。
+      return {
+        activeTrackId: trackId,
+        selectedBlockId: null,
+        selectedBlockIds: [],
+        selectedNoteIds: [],
+      };
+    }),
 
   setTrackInstrument: (trackId, instrumentId) =>
     set((s) => {
@@ -779,17 +855,8 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       };
     }),
 
-  setTrackHeight: (trackId, px) =>
-    set((s) => {
-      const settings = s.trackSettings[trackId];
-      if (!settings) return {};
-      return {
-        trackSettings: {
-          ...s.trackSettings,
-          [trackId]: { ...settings, height: clamp(px, CHORD_TRACK_HEIGHT_MIN, CHORD_TRACK_HEIGHT_MAX) },
-        },
-      };
-    }),
+  setChordTrackAreaHeight: (px) =>
+    set({ chordTrackAreaHeight: clamp(px, CHORD_TRACK_AREA_HEIGHT_MIN, CHORD_TRACK_AREA_HEIGHT_MAX) }),
 
   toggleTrackMute: (trackId) =>
     set((s) => {
@@ -809,6 +876,44 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     transact(() =>
       set((s) => ({ tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, name } : t)) })),
     ),
+
+  setTrackColor: (trackId, color) =>
+    transact(() =>
+      set((s) => ({ tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, color } : t)) })),
+    ),
+
+  moveTrackBy: (trackId, delta) =>
+    transact(() =>
+      set((s) => {
+        const idx = s.tracks.findIndex((t) => t.id === trackId);
+        if (idx === -1) return {};
+        const target = clamp(idx + delta, 0, s.tracks.length - 1);
+        if (target === idx) return {};
+        const next = [...s.tracks];
+        const [moved] = next.splice(idx, 1);
+        next.splice(target, 0, moved);
+        return { tracks: next };
+      }),
+    ),
+
+  setTrackLaneHeight: (trackId, px) =>
+    set((s) => {
+      const settings = s.trackSettings[trackId];
+      if (!settings) return {};
+      const clamped = clamp(px, laneHeight(ZOOM_Y_MIN), laneHeight(ZOOM_Y_MAX));
+      return {
+        trackSettings: { ...s.trackSettings, [trackId]: { ...settings, laneHeightPx: clamped } },
+      };
+    }),
+
+  resetTrackLaneHeight: (trackId) =>
+    set((s) => {
+      const settings = s.trackSettings[trackId];
+      if (!settings) return {};
+      return {
+        trackSettings: { ...s.trackSettings, [trackId]: { ...settings, laneHeightPx: null } },
+      };
+    }),
 
   /* --- 再生 --- */
   setPlaying: (isPlaying) => set({ isPlaying }),
@@ -968,24 +1073,32 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     }),
 
   selectBlocks: (trackId, ids, additive = false) =>
-    set((state) => ({
-      activeTrackId: trackId,
-      selectedBlockIds: additive
-        ? [...new Set([...state.selectedBlockIds, ...ids])]
-        : [...new Set(ids)],
-      selectedNoteIds: [],
-      selectedSegmentStart: null,
-    })),
+    set((state) => {
+      // 別トラックへの切り替えでは、前トラックの選択を引きずらない
+      // （selectedBlockIds はトラックをまたいだ複数選択を想定していない）。
+      const sameTrack = state.activeTrackId === trackId;
+      return {
+        activeTrackId: trackId,
+        selectedBlockIds:
+          additive && sameTrack
+            ? [...new Set([...state.selectedBlockIds, ...ids])]
+            : [...new Set(ids)],
+        selectedNoteIds: [],
+        selectedSegmentStart: null,
+      };
+    }),
 
   toggleBlockSelection: (trackId, id) =>
-    set((state) => ({
-      activeTrackId: trackId,
-      selectedBlockIds: state.selectedBlockIds.includes(id)
-        ? state.selectedBlockIds.filter((x) => x !== id)
-        : [...state.selectedBlockIds, id],
-      selectedNoteIds: [],
-      selectedSegmentStart: null,
-    })),
+    set((state) => {
+      const sameTrack = state.activeTrackId === trackId;
+      const base = sameTrack ? state.selectedBlockIds : [];
+      return {
+        activeTrackId: trackId,
+        selectedBlockIds: base.includes(id) ? base.filter((x) => x !== id) : [...base, id],
+        selectedNoteIds: [],
+        selectedSegmentStart: null,
+      };
+    }),
 
   clearBlockSelection: () => set({ selectedBlockIds: [] }),
 

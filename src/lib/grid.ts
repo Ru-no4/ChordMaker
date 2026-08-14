@@ -54,13 +54,20 @@ export const stepWidth = (sig: TimeSignature, zoomX: number): number =>
 export const blockHeight = (zoomY: number): number => BASE_BLOCK_HEIGHT * zoomY;
 export const laneHeight = (zoomY: number): number => BASE_LANE_HEIGHT * zoomY;
 
+/** コードトラックの縦ズーム（chordZoomY）の既定値 */
+export const DEFAULT_CHORD_ZOOM_Y = 0.8;
+
 /**
- * コードトラックの表示高さ（ズームとは独立に、境界のドラッグで手動調整できる）。
- * 既定倍率でのレーン高さを下限とし、その3倍を上限にする。
+ * コードトラック「エリア」（複数トラックのレーンを縦に並べて表示する領域）の
+ * 表示高さ。境界のドラッグで手動調整できる。
+ * 各レーン自体の高さはここでは決めない — 縦ズーム（chordZoomY）から
+ * laneHeight() で一律に決まり、トラックが増えれば単にレーンが縦に
+ * 積み重なって、このエリアの中でスクロールする。
+ * エリアの下限は「既定の縦ズームでレーン1本ぶんを表示できる高さ」。
  */
-export const DEFAULT_CHORD_TRACK_HEIGHT = BASE_LANE_HEIGHT * 0.8;
-export const CHORD_TRACK_HEIGHT_MIN = DEFAULT_CHORD_TRACK_HEIGHT;
-export const CHORD_TRACK_HEIGHT_MAX = DEFAULT_CHORD_TRACK_HEIGHT * 3;
+export const DEFAULT_CHORD_TRACK_AREA_HEIGHT = laneHeight(DEFAULT_CHORD_ZOOM_Y);
+export const CHORD_TRACK_AREA_HEIGHT_MIN = DEFAULT_CHORD_TRACK_AREA_HEIGHT;
+export const CHORD_TRACK_AREA_HEIGHT_MAX = 514;
 
 /** プロジェクト全体の step 数（＝再生・ループの基準となる範囲） */
 export const totalSteps = (sig: TimeSignature, bars: number): number =>

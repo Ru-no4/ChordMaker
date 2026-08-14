@@ -44,7 +44,8 @@
 
   --key-row-black: rgba(0, 0, 0, 0.26);
 
-  --gutter-width: 120px;
+  /* トラック名がM/S/削除ボタンに圧迫されないよう、従来（120px）より20%広くしてある */
+  --gutter-width: 144px;
 
   --font-ui: 'Inter', 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP',
     system-ui, sans-serif;
@@ -108,13 +109,13 @@ html[data-theme='light'] {
  */
 @media (max-width: 1024px) {
   :root {
-    --gutter-width: 92px;
+    --gutter-width: 110px;
   }
 }
 
 @media (max-width: 640px) {
   :root {
-    --gutter-width: 68px;
+    --gutter-width: 82px;
   }
 }
 

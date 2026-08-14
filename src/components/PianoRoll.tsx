@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { WheelEvent as ReactWheelEvent } from 'react';
-import { selectActiveTrackBlocks, useProjectStore } from '../store/useProjectStore';
+import { selectActiveTrack, useProjectStore } from '../store/useProjectStore';
 import {
   ZOOM_FACTOR,
   ZOOM_X_MAX,
@@ -36,7 +36,8 @@ interface PianoRollProps {
 }
 
 export function PianoRoll({ onPreview }: PianoRollProps) {
-  const blocks = useProjectStore(selectActiveTrackBlocks);
+  const activeTrack = useProjectStore(selectActiveTrack);
+  const blocks = activeTrack?.blocks ?? [];
   const selectedBlockId = useProjectStore((s) => s.selectedBlockId);
   const selectedNoteIds = useProjectStore((s) => s.selectedNoteIds);
   const open = useProjectStore((s) => s.pianoRollOpen);
@@ -92,10 +93,13 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
   const eraseSet = useMemo(() => new Set(eraseHot), [eraseHot]);
   const selectedSet = useMemo(() => new Set(selectedNoteIds), [selectedNoteIds]);
 
-  /** アクティブセグメントの構成音を鍵盤にハイライト */
+  /** アクティブセグメントの構成音を鍵盤にハイライト（コードトラックのみ） */
   const activePitches = useMemo(
-    () => new Set((activeSegment?.midis ?? []).map(pitchClass)),
-    [activeSegment],
+    () =>
+      activeTrack?.kind === 'chord'
+        ? new Set((activeSegment?.midis ?? []).map(pitchClass))
+        : new Set<number>(),
+    [activeSegment, activeTrack?.kind],
   );
 
   const gridStyle = useMemo(
@@ -150,7 +154,16 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
 
         <span className="pr-range">C1 – C6</span>
 
-        {selected ? (
+        {selected && activeTrack?.kind === 'notes' ? (
+          <span className="pr-current">
+            <span
+              className="pr-current__swatch"
+              style={{ background: activeTrack.color, borderColor: activeTrack.color }}
+            />
+            <strong>{activeTrack.name}</strong>
+            <span className="pr-current__meta">{selected.notes.length} notes</span>
+          </span>
+        ) : selected ? (
           <span className="pr-current">
             <span
               className="pr-current__swatch"
@@ -238,8 +251,9 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
                   />
                 ))}
 
-                {/* 選択ブロック内のコードの切れ目。上のコードトラックと位置が揃う */}
+                {/* 選択ブロック内のコードの切れ目。上のコードトラックと位置が揃う（コードトラックのみ） */}
                 {selected &&
+                  activeTrack?.kind === 'chord' &&
                   segments.slice(1).map((seg) => (
                     <div
                       key={seg.start}
@@ -251,9 +265,10 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
                 {/*
                   ノートはブロックを跨いで編集できる。
                   選択中ブロック以外は控えめに描くが、選択・移動・削除は同じように行える。
+                  通常トラックはコード判定を行わないので、色はトラック固有の色で統一する。
                 */}
                 {blocks.flatMap((b) => {
-                  const segs = segmentsFor(b, resolutionSteps);
+                  const segs = activeTrack?.kind === 'chord' ? segmentsFor(b, resolutionSteps) : null;
                   return b.notes.map((n) => (
                     <Note
                       key={n.id}
@@ -261,7 +276,15 @@ export function PianoRoll({ onPreview }: PianoRollProps) {
                       blockStart={b.start}
                       stepW={stepW}
                       zoomY={zoomY}
-                      style={styleFor(segmentAt(segs, n.start)?.detection.chord?.category ?? null)}
+                      style={
+                        segs
+                          ? styleFor(segmentAt(segs, n.start)?.detection.chord?.category ?? null)
+                          : {
+                              label: '',
+                              base: activeTrack?.color ?? '#8b939f',
+                              accent: activeTrack?.color ?? '#8b939f',
+                            }
+                      }
                       selected={selectedSet.has(n.id)}
                       erasing={eraseSet.has(n.id)}
                       dimmed={b.id !== selectedBlockId}

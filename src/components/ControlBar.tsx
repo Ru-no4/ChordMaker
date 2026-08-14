@@ -43,6 +43,7 @@ export function ControlBar({
   onJumpToStart,
   onOpenHelp,
 }: ControlBarProps) {
+  const activeTrackId = useProjectStore((s) => s.activeTrackId);
   const bpm = useProjectStore((s) => s.bpm);
   const setBpm = useProjectStore((s) => s.setBpm);
   const timeSignature = useProjectStore((s) => s.timeSignature);
@@ -278,7 +279,7 @@ export function ControlBar({
 
       {/* ---- 音源 / ツール / グリッド / 表示。左ゾーンと同様に左寄せで続ける ---- */}
       <div className="cb-zone cb-zone--tools">
-        <InstrumentSelect />
+        <InstrumentSelect trackId={activeTrackId} />
 
         <div className="cb-field cb-field--volume">
           <label className="cb-label" htmlFor="vol-slider">

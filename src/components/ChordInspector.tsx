@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { selectActiveTrackBlocks, useProjectStore, type ChordBlockItem } from '../store/useProjectStore';
+import { selectActiveTrack, useProjectStore, type ChordBlockItem } from '../store/useProjectStore';
 import { chordResolutionSteps } from '../lib/grid';
 import { candidateToMidi, formatIntervalName, midiToName, pitchClass } from '../lib/theory';
 import { CATEGORY_ORDER, CATEGORY_STYLES, styleFor } from '../lib/colors';
@@ -44,7 +44,8 @@ interface ChordInspectorProps {
  * ブロックが複数コードに分かれている場合は、セグメントを切り替えて見られる。
  */
 export function ChordInspector({ onPreview }: ChordInspectorProps) {
-  const blocks = useProjectStore(selectActiveTrackBlocks);
+  const activeTrack = useProjectStore(selectActiveTrack);
+  const blocks = activeTrack?.blocks ?? [];
   const selectedBlockId = useProjectStore((s) => s.selectedBlockId);
   const selectedBlockIds = useProjectStore((s) => s.selectedBlockIds);
   const timeSignature = useProjectStore((s) => s.timeSignature);
@@ -73,6 +74,22 @@ export function ChordInspector({ onPreview }: ChordInspectorProps) {
         : [],
     [blocks, resolutionSteps, selected, segment],
   );
+
+  // ---- 通常トラック（コード判定を行わない）: 軽量な表示に差し替える ----
+  // フックはここまで他のトラックと同じ順序で必ず呼び終えている
+  // （Reactのフック規則上、kind による早期returnより前に置いてはいけない）。
+  if (activeTrack?.kind === 'notes') {
+    return (
+      <div className="inspector inspector--notes">
+        <span className="inspector__label" style={{ color: activeTrack.color }}>
+          {activeTrack.name}
+        </span>
+        <span className="inspector__hint">
+          {selected ? `${selected.notes.length} notes` : t(ci.notesTrackHint)}
+        </span>
+      </div>
+    );
+  }
 
   // ---- 複数ブロック選択中: 通常の単一コード表示より優先して一括操作パネルを出す ----
   if (selectedBlockIds.length > 0) {

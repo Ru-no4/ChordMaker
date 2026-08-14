@@ -30,8 +30,39 @@
   align-items: stretch;
 }
 
-.timeline__row--ruler {
+/*
+ * ---- BARS 行 ----
+ * 「何小節目か」「再生範囲」を示す大事な行なので、トラックエリアとは
+ * 完全に別の行にする（同じスクロール領域に同居させない）。縦スクロールは
+ * そもそも不要（1行しかない）。横方向はトラックエリア（.timeline__scroll）の
+ * scrollLeft に合わせて中身を transform でずらすだけで、この行自体は
+ * overflow:hidden — 独自のスクロールバーは持たない。
+ */
+.timeline__bars-row {
+  display: flex;
+  align-items: stretch;
   height: var(--ruler-height);
+}
+
+.timeline__bars-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.timeline__bars-content {
+  position: relative;
+  height: 100%;
+}
+
+/* トラックエリア側の縦ズームカラム（幅24px）と横位置を揃えるための空白 */
+.timeline__bars-vzoom-spacer {
+  flex: 0 0 24px;
+  width: 24px;
+  background: var(--bg-sunken);
+  border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 /* 高さは表示倍率に応じて JSX 側から指定する */
@@ -53,6 +84,44 @@
   padding: 0 10px;
   background: linear-gradient(180deg, var(--bg-raised) 0%, var(--bg-panel) 100%);
   border-right: 1px solid var(--border-strong);
+  overflow: hidden;
+}
+
+/*
+ * トラックのガターは「トラック名・音源・音量」の主要カラムと、
+ * 「ミュート/ソロ/削除」を縦に並べる操作カラムを横に並べる
+ * （名前が M/S/削除ボタンに横幅を圧迫されて読めなくなるのを防ぐため、
+ * ガター幅を鍵盤幅ごと少し広げ、増えた分を操作カラムに充てている）。
+ */
+.timeline__gutter:not(.timeline__gutter--ruler) {
+  flex-direction: row;
+  align-items: stretch;
+  gap: 6px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+/* 主要カラム（トラック名/音源/音量）。レーンが低いときは上から詰めて表示し、
+   はみ出した分は親の overflow:hidden で自然に隠す
+   （縦ズームでレーンを高くすれば全部見えるようになる） */
+.timeline__gutter-main {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* ミュート/ソロ/削除を縦に並べる操作カラム。レーンの高さいっぱいを使って
+   縦方向中央に寄せる */
+.timeline__gutter-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  flex: 0 0 auto;
 }
 
 .timeline__gutter--ruler {
@@ -68,9 +137,226 @@
   color: var(--text-dim);
 }
 
-.timeline__gutter-hint {
-  font-size: 9px;
+/* ---- トラックのガター（複数トラック時、クリックでそのトラックをアクティブに） ---- */
+.timeline__gutter:not(.timeline__gutter--ruler) {
+  cursor: pointer;
+}
+
+.timeline__gutter.is-active {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 18%, var(--bg-raised)) 0%,
+    var(--bg-panel) 100%
+  );
+  border-right-color: var(--accent);
+}
+
+.timeline__gutter-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* トラックの色（ネイティブのカラーピッカーを丸いスウォッチに見せかける） */
+.timeline__gutter-swatch {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+
+.timeline__gutter-swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+  border-radius: 50%;
+}
+
+.timeline__gutter-swatch::-webkit-color-swatch {
+  border: none;
+  border-radius: 50%;
+}
+
+.timeline__gutter-swatch::-moz-color-swatch {
+  border: none;
+  border-radius: 50%;
+}
+
+/* トラックの並べ替え用グリップ（縦ドラッグ） */
+.timeline__gutter-grip {
+  flex: 0 0 auto;
+  width: 10px;
+  padding: 0;
+  border: none;
+  background: transparent;
   color: var(--text-faint);
+  font-size: 10px;
+  line-height: 1;
+  cursor: grab;
+  touch-action: none;
+}
+
+.timeline__gutter-grip:hover {
+  color: var(--accent);
+}
+
+.timeline__gutter-grip:active {
+  cursor: grabbing;
+}
+
+.timeline__gutter-head .timeline__gutter-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+
+/* トラック名のインライン編集用入力欄 */
+.timeline__gutter-label-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 14px;
+  padding: 0 2px;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.timeline__gutter-remove {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.timeline__gutter-remove:hover {
+  background: rgba(255, 80, 80, 0.18);
+  color: var(--playhead);
+}
+
+/* ---- ミュート/ソロ（マウス/ホイールが gutter クリックに巻き込まれないよう stopPropagation 済み） ---- */
+.timeline__gutter-mute,
+.timeline__gutter-solo {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--bg-sunken);
+  color: var(--text-faint);
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.timeline__gutter-mute:hover,
+.timeline__gutter-solo:hover {
+  filter: brightness(1.3);
+}
+
+.timeline__gutter-mute.is-active {
+  background: color-mix(in srgb, var(--playhead) 65%, var(--bg-sunken));
+  border-color: var(--playhead);
+  color: #fff;
+}
+
+.timeline__gutter-solo.is-active {
+  background: color-mix(in srgb, #e0c030 65%, var(--bg-sunken));
+  border-color: #e0c030;
+  color: #fff;
+}
+
+/* ---- トラック追加行 ---- */
+.timeline__row--add-track {
+  height: 26px;
+}
+
+.timeline__add-track {
+  flex: 1 1 auto;
+  border: none;
+  border-top: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+  padding: 0 12px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.timeline__add-track:hover {
+  background: var(--hover-overlay);
+  color: var(--accent);
+}
+
+/* ---- トラックごとの使用音源名（読み取り専用。変更は上部の音源メニューで行う） ---- */
+.timeline__gutter-instrument {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9px;
+  color: var(--text-dim);
+}
+
+/* ---- トラックごとの音量スライダー（ガター内、音源セレクトの下） ---- */
+.timeline__gutter-vol {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.timeline__gutter-vol-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.timeline__gutter-vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 9px;
+  height: 12px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--thumb-grad-top) 0%, var(--thumb-grad-bottom) 100%);
+  border: 1px solid var(--thumb-border);
+  cursor: pointer;
+}
+
+.timeline__gutter-vol-slider::-moz-range-thumb {
+  width: 9px;
+  height: 12px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--thumb-grad-top) 0%, var(--thumb-grad-bottom) 100%);
+  border: 1px solid var(--thumb-border);
+  cursor: pointer;
 }
 
 /*
@@ -78,6 +364,8 @@
  * .timeline__scroll の外側の専用カラムに置くことで、水平スクロール幅の
  * 計算に巻き込まれず、スクロールしても常に右端に留まる
  * （sticky ではなく、スクロール領域そのものの外に出すことで実現している）。
+ * BARS 行側の .timeline__bars-vzoom-spacer と横位置を揃えて、
+ * 縦に連続した1本のカラムに見えるようにしている。
  */
 .timeline__vzoomcol {
   flex: 0 0 auto;
@@ -86,13 +374,6 @@
   flex-direction: column;
   background: var(--bg-sunken);
   border-left: 1px solid var(--border);
-}
-
-/* ルーラー行ぶんの空白。縦ズーム本体をコードトラック行と縦位置を揃える */
-.timeline__vzoomcol-spacer {
-  flex: 0 0 auto;
-  height: var(--ruler-height);
-  border-bottom: 1px solid var(--border);
 }
 
 .timeline__vzoom {
@@ -246,10 +527,17 @@
   cursor: crosshair;
 }
 
-/* 先頭の余白ぶん、コードブロック一式をまとめて右へずらすラッパー */
+/*
+ * 先頭の余白ぶん、コードブロック一式をまとめて右へずらすラッパー。
+ * 位置合わせだけが目的で、レーン全域（空いている小節も含む）を覆ってしまうため
+ * pointer-events は殺しておく。殺さないと、空の小節でのポインタイベントが
+ * ここで拾われて .chord-lane 自身（クリックでのブロック追加・矩形選択・パン等）
+ * に届かなくなる。実際に操作する対象（.chord-block）側で auto に戻す。
+ */
 .chord-lane__content {
   position: absolute;
   inset: 0;
+  pointer-events: none;
 }
 
 /*
@@ -277,12 +565,53 @@
 }
 
 /*
+ * ---- トラック単位の高さ調整ハンドル ----
+ * レーンの下端に薄く重ねる（ChordTrackResizeHandle と同じドラッグの
+ * 考え方をトラック単位に一般化）。常時表示するとトラックが増えたときに
+ * 間延びして見えるため、ホバーするまでは透明にしておく。
+ */
+.track-lane-resize-handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -4px;
+  height: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: row-resize;
+  touch-action: none;
+  user-select: none;
+  z-index: 4;
+}
+
+.track-lane-resize-handle__grip {
+  width: 32px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s, background 0.12s;
+}
+
+.track-lane-resize-handle:hover .track-lane-resize-handle__grip,
+.track-lane-resize-handle:active .track-lane-resize-handle__grip {
+  opacity: 1;
+  background: var(--accent);
+}
+
+/*
  * 先頭・末尾の余白（EDGE_MARGIN_BAR_FRACTION 分）に置く「小節を追加」ボタン。
  * コードトラック・ピアノロールの両方で使う共通クラス。
  */
 .timeline-add-bar {
   position: absolute;
-  top: 50%;
+  /*
+   * top はトラックエリアの「現在表示されている高さ」の中間になるよう
+   * JSX/JS 側で常に指定する（ChordTimeline.tsx の syncAddBarTop）。
+   * ここではその値を中心に据えるための transform だけ持つ。
+   */
   transform: translate(-50%, -50%);
   width: 22px;
   height: 22px;
@@ -294,7 +623,12 @@
   font-size: 15px;
   line-height: 1;
   cursor: pointer;
-  z-index: 7;
+  /*
+   * ガター（sticky, z-index:6）より下にする。コードブロックと同じく、
+   * 横スクロールでガターの下へ隠れるようにするため
+   * （以前は z-index が高く、スクロール時にガターの上を通ってしまっていた）。
+   */
+  z-index: 3;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 
@@ -317,6 +651,8 @@
   overflow: hidden;
   user-select: none;
   -webkit-touch-callout: none;
+  /* 親の .chord-lane__content は pointer-events: none なので、ここで自分だけ戻す */
+  pointer-events: auto;
   /* ドラッグをブラウザのスクロールに奪われないようにする */
   touch-action: none;
   transition: box-shadow 0.12s, filter 0.12s;
@@ -440,6 +776,25 @@
 .chord-block__handle:hover,
 .chord-block.is-selected .chord-block__handle {
   background: rgba(255, 255, 255, 0.28);
+}
+
+/* ---- 通常トラックのブロック内プレビュー（コード表記の代わり） ---- */
+.notes-preview {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.notes-preview__note {
+  position: absolute;
+  border-radius: 2px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--notes-preview-color) 88%, #ffffff 12%) 0%,
+    var(--notes-preview-color) 62%,
+    color-mix(in srgb, var(--notes-preview-color) 78%, #000000 22%) 100%
+  );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
 .chord-block__handle--left {

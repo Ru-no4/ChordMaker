@@ -6,7 +6,7 @@
  * データは常にローカルで完結し、外部へは一切送信しない。
  */
 import type { ChordBlockItem } from '../store/useProjectStore';
-import { DEFAULT_CHORD_TRACK_HEIGHT, type ChordResolution, type QuantizeValue, type TimeSignature } from './grid';
+import type { ChordResolution, QuantizeValue, TimeSignature } from './grid';
 
 /** ファイルの拡張子（中身は JSON） */
 export const PROJECT_FILE_EXTENSION = '.chrd';
@@ -20,11 +20,15 @@ export interface SerializedTrack {
   id: string;
   name: string;
   color: string;
+  /** 'chord'|'notes' 導入前のファイルには存在しない。読み込み時に 'chord' で補う。 */
+  kind: 'chord' | 'notes';
   instrumentId: string;
   volumeDb: number;
   muted: boolean;
   solo: boolean;
-  height: number;
+  /** トラック単位のレーン高さ上書き(px)。無ければ null（共有ズームを使う）。
+   *  この項目導入前のファイルには存在しない。読み込み時に null で補う。 */
+  laneHeightPx: number | null;
   blocks: ChordBlockItem[];
 }
 
@@ -115,18 +119,25 @@ function isBlock(v: unknown): v is ChordBlockItem {
   );
 }
 
-function isSerializedTrack(v: unknown): v is SerializedTrack {
+function isSerializedTrack(
+  v: unknown,
+): v is Omit<SerializedTrack, 'kind' | 'laneHeightPx'> & { kind?: unknown; laneHeightPx?: unknown } {
   if (!v || typeof v !== 'object') return false;
   const t = v as Record<string, unknown>;
   return (
     typeof t.id === 'string' &&
     typeof t.name === 'string' &&
     typeof t.color === 'string' &&
+    // kind は 'chord'|'notes' 導入前のファイルに存在しないため必須にしない
+    // （必須にすると旧ファイルが軒並み読み込みエラーになる）。無い/不正な値は
+    // parseProjectFile 側で 'chord' に正規化する。
+    (t.kind === undefined || t.kind === 'chord' || t.kind === 'notes') &&
     typeof t.instrumentId === 'string' &&
     typeof t.volumeDb === 'number' &&
     typeof t.muted === 'boolean' &&
     typeof t.solo === 'boolean' &&
-    typeof t.height === 'number' &&
+    // laneHeightPx も同様に、導入前のファイルには存在しないため必須にしない
+    (t.laneHeightPx === undefined || t.laneHeightPx === null || typeof t.laneHeightPx === 'number') &&
     Array.isArray(t.blocks) &&
     t.blocks.every(isBlock)
   );
@@ -170,7 +181,15 @@ export function parseProjectFile(text: string): ProjectFile {
     if (!f.tracks.every(isSerializedTrack)) {
       throw new ProjectFileError('corrupt-blocks');
     }
-    tracks = f.tracks as SerializedTrack[];
+    // kind は 'chord'|'notes' 導入前のファイルに存在しないため、無い/不正な
+    // 値は 'chord' に正規化する（以前はすべてのトラックがコード判定・
+    // コード編集の対象として扱われていたので、それを再現するのが唯一
+    // 「以前と見分けがつかない」デフォルトになる）。
+    tracks = f.tracks.map((t) => ({
+      ...t,
+      kind: t.kind === 'chord' || t.kind === 'notes' ? t.kind : 'chord',
+      laneHeightPx: typeof t.laneHeightPx === 'number' ? t.laneHeightPx : null,
+    }));
   } else {
     if (!Array.isArray(f.blocks) || !f.blocks.every(isBlock)) {
       throw new ProjectFileError('corrupt-blocks');
@@ -183,11 +202,12 @@ export function parseProjectFile(text: string): ProjectFile {
         id: `trk-migrated-${Date.now().toString(36)}`,
         name: 'CHORD TRACK',
         color: '#4f8cff',
+        kind: 'chord',
         instrumentId: f.instrumentId,
         volumeDb: f.volumeDb,
         muted: false,
         solo: false,
-        height: DEFAULT_CHORD_TRACK_HEIGHT,
+        laneHeightPx: null,
         blocks: f.blocks as ChordBlockItem[],
       },
     ];

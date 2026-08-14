@@ -4,19 +4,27 @@ import { useProjectStore, type ChordBlockItem, type NoteDragSnapshot } from '../
 import { blockHeight, chordResolutionSteps, snapStep } from '../lib/grid';
 import { capturePointer, isTap, releasePointer } from '../lib/pointer';
 import { segmentsFor, type ChordSegment as ChordSegmentData } from '../lib/segmentation';
+import { EMPTY_RESULT } from '../lib/theory';
 import { ChordSegment } from './ChordSegment';
+import { NotesPreview } from './NotesPreview';
 import { useT } from '../i18n/useT';
 import { strings } from '../i18n/strings';
 
 type DragMode = 'move' | 'resize-left' | 'resize-right';
 
 interface ChordBlockProps {
+  /** このブロックが属するトラック。複数トラックが並ぶため、アクティブトラックとは限らない */
+  trackId: string;
   block: ChordBlockItem;
   stepW: number;
   zoomY: number;
   /** レーンの実表示高さ(px)。ズームとは独立に手動調整できるため、ブロックの中央寄せに使う */
   laneH: number;
   selected: boolean;
+  /** 'chord' はコード判定表示、'notes' はノートのミニプレビュー表示 */
+  trackKind: 'chord' | 'notes';
+  /** 'notes' トラックのプレビューに使うトラック固有の色 */
+  trackColor: string;
 }
 
 /**
@@ -70,8 +78,16 @@ function notesInSegment(notes: ChordBlockItem['notes'], seg: ChordSegmentData) {
  * コードタイムライン上の1ブロック。
  * ブロック自体は「ノートの入れ物」で、コード名と色は中のセグメントが持つ。
  */
-export function ChordBlock({ block, stepW, zoomY, laneH, selected }: ChordBlockProps) {
-  const trackId = useProjectStore((s) => s.activeTrackId);
+export function ChordBlock({
+  trackId,
+  block,
+  stepW,
+  zoomY,
+  laneH,
+  selected,
+  trackKind,
+  trackColor,
+}: ChordBlockProps) {
   const selectBlock = useProjectStore((s) => s.selectBlock);
   const toggleBlockSelection = useProjectStore((s) => s.toggleBlockSelection);
   const selectSegment = useProjectStore((s) => s.selectSegment);
@@ -94,10 +110,17 @@ export function ChordBlock({ block, stepW, zoomY, laneH, selected }: ChordBlockP
   const { t } = useT();
   const cbk = strings.chordBlock;
 
-  const segments = useMemo(
-    () => segmentsFor(block, chordResolutionSteps(timeSignature, chordResolution)),
-    [block, chordResolution, timeSignature],
-  );
+  const segments = useMemo(() => {
+    if (trackKind === 'notes') {
+      // 通常トラックはコード区切りという概念が無いので、ブロック全体を
+      // 覆う疑似セグメント1個として扱う。こうすると「単一コードのブロック」
+      // と同じ経路（block単位のドラッグ・リサイズ・Ctrl複製）がそのまま
+      // 安全に動く一方、コード区切りでのセグメント単位ドラッグだけが
+      // 自然に発生しなくなる（segments.length は常に1のため）。
+      return [{ start: 0, length: block.length, detection: EMPTY_RESULT, midis: [] }];
+    }
+    return segmentsFor(block, chordResolutionSteps(timeSignature, chordResolution));
+  }, [block, chordResolution, timeSignature, trackKind]);
 
   const activeStart = useMemo(() => {
     if (!selected) return null;
@@ -325,18 +348,22 @@ export function ChordBlock({ block, stepW, zoomY, laneH, selected }: ChordBlockP
         removeBlock(trackId, block.id);
       }}
     >
-      {segments.map((seg, i) => (
-        <ChordSegment
-          key={`${seg.start}-${i}`}
-          segment={seg}
-          index={i}
-          stepW={stepW}
-          height={height}
-          single={single}
-          first={i === 0}
-          active={seg.start === activeStart}
-        />
-      ))}
+      {trackKind === 'notes' ? (
+        <NotesPreview notes={block.notes} stepW={stepW} height={height} color={trackColor} />
+      ) : (
+        segments.map((seg, i) => (
+          <ChordSegment
+            key={`${seg.start}-${i}`}
+            segment={seg}
+            index={i}
+            stepW={stepW}
+            height={height}
+            single={single}
+            first={i === 0}
+            active={seg.start === activeStart}
+          />
+        ))
+      )}
 
       <div
         className="chord-block__handle chord-block__handle--left"

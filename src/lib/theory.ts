@@ -539,7 +539,7 @@ function buildCandidates(pcs: number[], bassPc: number): ChordCandidate[] {
 /** 第一候補からこのスコア差までを「別解釈」として提示する */
 const ALTERNATIVE_SCORE_WINDOW = 6;
 
-const EMPTY_RESULT: DetectionResult = {
+export const EMPTY_RESULT: DetectionResult = {
   kind: 'empty',
   chord: null,
   alternatives: [],

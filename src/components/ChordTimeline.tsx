@@ -1,9 +1,8 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react';
-import { selectActiveTrackBlocks, useProjectStore } from '../store/useProjectStore';
+import { useProjectStore } from '../store/useProjectStore';
 import { usePlayheadStore } from '../store/usePlayheadStore';
 import {
-  DEFAULT_CHORD_TRACK_HEIGHT,
   STEPS_PER_WHOLE,
   ZOOM_FACTOR,
   ZOOM_X_MAX,
@@ -13,6 +12,7 @@ import {
   beatWidth,
   displayBars,
   edgeMarginSteps,
+  laneHeight,
   stepWidth,
   stepsPerBar,
   stepsPerBeat,
@@ -22,15 +22,21 @@ import { capturePointer, releasePointer } from '../lib/pointer';
 import { useSyncedScroll } from '../lib/scrollSync';
 import { useEdgeAutoScroll } from '../hooks/useEdgeAutoScroll';
 import { usePlayheadFollow } from '../hooks/usePlayheadFollow';
-import { ChordBlock } from './ChordBlock';
+import { AddTrackDialog } from './AddTrackDialog';
 import { Playhead } from './Playhead';
+import { TrackLane } from './TrackLane';
 import { ZoomSlider } from './ZoomSlider';
 import { useT } from '../i18n/useT';
 import { strings } from '../i18n/strings';
 import './ChordTimeline.css';
 
-/** 鍵盤幅と揃えた左ガター幅 */
-export const GUTTER_WIDTH = 120;
+/**
+ * 鍵盤幅と揃えた左ガター幅。
+ * トラック名がミュート/ソロ/削除ボタンに圧迫されて読めない問題への対応で、
+ * 従来（120px）より20%広くしてある。増えた分はガター内の縦並び操作カラム
+ * （ChordTimeline.css の .timeline__gutter-actions）に充てる。
+ */
+export const GUTTER_WIDTH = 144;
 
 /** 再生範囲ハンドル（三角形のつまみ）の幅。CSS 側の .ruler__range-handle と揃える */
 const RANGE_HANDLE_WIDTH = 12;
@@ -40,8 +46,9 @@ interface ChordTimelineProps {
 }
 
 export function ChordTimeline({ onSeek }: ChordTimelineProps) {
-  const blocks = useProjectStore(selectActiveTrackBlocks);
+  const tracks = useProjectStore((s) => s.tracks);
   const activeTrackId = useProjectStore((s) => s.activeTrackId);
+  const addTrack = useProjectStore((s) => s.addTrack);
   const timeSignature = useProjectStore((s) => s.timeSignature);
   const bars = useProjectStore((s) => s.bars);
   const setBars = useProjectStore((s) => s.setBars);
@@ -50,29 +57,25 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
   const addBarAtStart = useProjectStore((s) => s.addBarAtStart);
   const beginTransaction = useProjectStore((s) => s.beginTransaction);
   const endTransaction = useProjectStore((s) => s.endTransaction);
-  const selectedBlockId = useProjectStore((s) => s.selectedBlockId);
-  const selectedBlockIds = useProjectStore((s) => s.selectedBlockIds);
-  const selectBlock = useProjectStore((s) => s.selectBlock);
-  const selectBlocks = useProjectStore((s) => s.selectBlocks);
-  const addBlockAt = useProjectStore((s) => s.addBlockAt);
-  const editorTool = useProjectStore((s) => s.editorTool);
   const zoomX = useProjectStore((s) => s.zoomX);
   const chordZoomY = useProjectStore((s) => s.chordZoomY);
-  const chordTrackHeight = useProjectStore(
-    (s) => s.trackSettings[s.activeTrackId]?.height ?? DEFAULT_CHORD_TRACK_HEIGHT,
-  );
+  const chordTrackAreaHeight = useProjectStore((s) => s.chordTrackAreaHeight);
   const zoomXBy = useProjectStore((s) => s.zoomXBy);
   const chordZoomYBy = useProjectStore((s) => s.chordZoomYBy);
   const setZoomX = useProjectStore((s) => s.setZoomX);
   const setChordZoomY = useProjectStore((s) => s.setChordZoomY);
   const { t } = useT();
   const ct = strings.chordTimeline;
+  const tl = strings.trackLane;
   const te = strings.timelineEdge;
 
+  const [showAddTrackChooser, setShowAddTrackChooser] = useState(false);
+
   const { ref, onScroll } = useSyncedScroll<HTMLDivElement>();
-  const panRef = useRef<{ originX: number; scrollLeft: number } | null>(null);
-  const marqueeRef = useRef<{ originX: number; base: string[]; additive: boolean } | null>(null);
-  const [marquee, setMarquee] = useState<{ left: number; width: number } | null>(null);
+  const rulerRef = useRef<HTMLDivElement | null>(null);
+  const barsContentRef = useRef<HTMLDivElement | null>(null);
+  const addBarStartRef = useRef<HTMLButtonElement | null>(null);
+  const addBarEndRef = useRef<HTMLButtonElement | null>(null);
   const rangeEndDragRef = useRef<{ originX: number; origValue: number } | null>(null);
   const rangeStartDragRef = useRef<{ originX: number; origValue: number } | null>(null);
 
@@ -88,20 +91,36 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
   const rangeBandWidth = Math.abs(bars - rangeStart) * barW;
   const rangeStartHandleLeft = rangeStart * barW + marginPx;
   const rangeEndHandleLeft = bars * barW + marginPx - RANGE_HANDLE_WIDTH;
-  const handleAddBarStart = () => {
+  const handleAddBarStart = useCallback(() => {
     addBarAtStart();
     const playhead = usePlayheadStore.getState();
     playhead.setStep(playhead.step + stepsPerBar(timeSignature));
-  };
-  const handleAddBarEnd = () => setBars(bars + 1);
-  // 表示上の小節数。bars を超えて置かれた内容があれば、そこまで表示を伸ばす
-  const shownBars = displayBars(timeSignature, bars, blocks);
+  }, [addBarAtStart, timeSignature]);
+  const handleAddBarEnd = useCallback(() => setBars(bars + 1), [bars, setBars]);
+
+  /**
+   * コードトラックが1本も無いときだけ、通常/コードトラックの選択肢を出す
+   * （消してしまうと戻せなくなるコードトラックの復元導線）。
+   * コードトラックが既にある場合は、これまで通り即座に通常トラックを追加する。
+   */
+  const handleAddTrackClick = useCallback(() => {
+    if (tracks.some((track) => track.kind === 'chord')) {
+      addTrack('notes');
+    } else {
+      setShowAddTrackChooser(true);
+    }
+  }, [addTrack, tracks]);
+
+  // 表示上の小節数。全トラックのうち、bars を超えて置かれた内容があれば、そこまで表示を伸ばす
+  const allBlocks = useMemo(() => tracks.flatMap((tr) => tr.blocks), [tracks]);
+  const shownBars = displayBars(timeSignature, bars, allBlocks);
   const total = totalSteps(timeSignature, shownBars);
   const contentWidth = total * stepW;
   const laneWidth = contentWidth + marginPx * 2;
-  // 表示高さはズームと独立（境界のドラッグで手動調整する）。ズームは中身のブロックの大きさだけを変える。
-  const laneH = chordTrackHeight;
   const beatsPerBar = timeSignature.numerator;
+  // 小節追加＋アイコンの初期縦位置（マウント直後、スクロール前の想定）。
+  // 実際の値は syncAddBarTop がスクロール位置も含めて算出し直す。
+  const initialAddBarTop = Math.min(chordTrackAreaHeight, tracks.length * laneHeight(chordZoomY)) / 2;
 
   // 再生ヘッドを中央に保つ。横スクロールは scrollSync でピアノロールにも伝わる。
   usePlayheadFollow(ref, stepW, GUTTER_WIDTH, marginPx);
@@ -119,82 +138,8 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
     [barW, marginPx, stepW, zoomX],
   );
 
-  /* --- レーン背景 --- */
-  const onLanePointerDown = useCallback(
-    (e: ReactPointerEvent<HTMLDivElement>) => {
-      // ブロック上ではブロック側が処理済み
-      if (e.currentTarget !== e.target) return;
-
-      // 手ツール / 中ボタンはビューのスクロール
-      if (editorTool === 'pan' || e.button === 1) {
-        capturePointer(e.currentTarget, e.pointerId);
-        panRef.current = { originX: e.clientX, scrollLeft: ref.current?.scrollLeft ?? 0 };
-        return;
-      }
-      if (e.button !== 0) return;
-
-      if (editorTool === 'draw') {
-        // 鉛筆はタップでブロック追加
-        const rect = e.currentTarget.getBoundingClientRect();
-        addBlockAt(activeTrackId, (e.clientX - rect.left - marginPx) / stepW);
-        return;
-      }
-
-      if (editorTool === 'range') {
-        // 範囲選択はドラッグで複数ブロックをまとめて選ぶ
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        capturePointer(e.currentTarget, e.pointerId);
-        marqueeRef.current = {
-          originX: x,
-          base: e.shiftKey ? selectedBlockIds : [],
-          additive: e.shiftKey,
-        };
-        setMarquee({ left: x, width: 0 });
-        return;
-      }
-
-      selectBlock(activeTrackId, null);
-    },
-    [activeTrackId, addBlockAt, editorTool, marginPx, selectBlock, selectedBlockIds, stepW],
-  );
-
-  const onLanePointerMove = useCallback(
-    (e: ReactPointerEvent<HTMLDivElement>) => {
-      const pan = panRef.current;
-      if (pan && ref.current) {
-        ref.current.scrollLeft = pan.scrollLeft - (e.clientX - pan.originX);
-        return;
-      }
-
-      const mq = marqueeRef.current;
-      if (!mq) return;
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const left = Math.min(mq.originX, x);
-      const width = Math.abs(x - mq.originX);
-      setMarquee({ left, width });
-
-      const hitStart = (left - marginPx) / stepW;
-      const hitEnd = (left + width - marginPx) / stepW;
-      const ids = blocks
-        .filter((b) => b.start < hitEnd && b.start + b.length > hitStart)
-        .map((b) => b.id);
-      selectBlocks(activeTrackId, mq.additive ? [...mq.base, ...ids] : ids);
-    },
-    [activeTrackId, blocks, marginPx, ref, selectBlocks, stepW],
-  );
-
-  const onLanePointerUp = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
-    panRef.current = null;
-    marqueeRef.current = null;
-    setMarquee(null);
-    releasePointer(e.currentTarget, e.pointerId);
-  }, []);
-
   /* --- ルーラー（クリック＆ドラッグで再生位置を移動） --- */
   const scrubRef = useRef(false);
-  const rulerRef = useRef<HTMLDivElement | null>(null);
   const lastClientXRef = useRef(0);
 
   const seekFrom = useCallback(
@@ -318,6 +263,46 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
     [endTransaction],
   );
 
+  /**
+   * 小節追加ボタン（左右の＋アイコン）を、「トラックエリアのうち、実際に
+   * トラック（黒背景）がある部分」の、現在表示されている高さの中間に来る
+   * よう縦位置を合わせる。トラックエリアはピアノロールとの境界をドラッグして
+   * トラックの合計高さより広げられるため、単純にトラックエリアの表示高さ
+   * （chordTrackAreaHeight）で中央寄せすると、はみ出した空欄部分に
+   * アイコンが落ち込んでしまう。そこで「トラック全体の高さ（レーン高さ×
+   * トラック数）」と「トラックエリアの表示高さ」のうち狭い方を使う。
+   * トラック数ぶん重複して出すのはやめ、トラックエリア全体で1組だけ表示する。
+   * 再描画を挟まないよう、他の scrollSync 系と同じく DOM を直接書き換える。
+   */
+  const syncAddBarTop = useCallback(() => {
+    const scrollTop = ref.current?.scrollTop ?? 0;
+    const tracksHeight = tracks.length * laneHeight(chordZoomY);
+    // 現在のスクロール位置から下に、実際にトラックが残っている高さ
+    const remainingTracksHeight = Math.max(0, tracksHeight - scrollTop);
+    const visibleHeight = Math.min(chordTrackAreaHeight, remainingTracksHeight);
+    const top = scrollTop + visibleHeight / 2;
+    if (addBarStartRef.current) addBarStartRef.current.style.top = `${top}px`;
+    if (addBarEndRef.current) addBarEndRef.current.style.top = `${top}px`;
+  }, [chordTrackAreaHeight, chordZoomY, tracks.length, ref]);
+
+  useEffect(() => {
+    syncAddBarTop();
+  }, [syncAddBarTop]);
+
+  /**
+   * BARS 行は独自のスクロールを持たない（overflow:hidden）ので、
+   * トラックエリア（.timeline__scroll）が横スクロールするたびに、
+   * BARS 行の中身を同じ量だけ transform でずらして追従させる。
+   * 再描画を挟まないよう、scrollSync と同じく DOM を直接書き換える。
+   */
+  const handleScroll = useCallback(() => {
+    onScroll();
+    if (barsContentRef.current && ref.current) {
+      barsContentRef.current.style.transform = `translateX(${-ref.current.scrollLeft}px)`;
+    }
+    syncAddBarTop();
+  }, [onScroll, ref, syncAddBarTop]);
+
   /** Ctrl+ホイールで拡大縮小（Shift 併用で縦＝コードトラック自身のズーム） */
   const onWheel = useCallback(
     (e: ReactWheelEvent<HTMLDivElement>) => {
@@ -332,14 +317,18 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
 
   return (
     <section className="timeline" aria-label={t(ct.ariaLabel)}>
-      <div className="timeline__viewport">
-        <div className="timeline__scroll" ref={ref} onScroll={onScroll} onWheel={onWheel}>
-          <div className="timeline__inner" style={{ width: GUTTER_WIDTH + laneWidth }}>
-          {/* ---- ルーラー ---- */}
-          <div className="timeline__row timeline__row--ruler">
-            <div className="timeline__gutter timeline__gutter--ruler">
-              <span className="timeline__gutter-label">BARS</span>
-            </div>
+      {/*
+        ---- BARS 行 ----
+        「何小節目か」「再生範囲」を表す行。トラックエリアとは完全に別行にし、
+        overflow:hidden の中で中身だけを横スクロール量ぶん transform でずらす
+        （＝独自のスクロールバーは持たない。縦スクロールもそもそも不要）。
+      ---- */}
+      <div className="timeline__bars-row">
+        <div className="timeline__gutter timeline__gutter--ruler">
+          <span className="timeline__gutter-label">BARS</span>
+        </div>
+        <div className="timeline__bars-viewport">
+          <div ref={barsContentRef} className="timeline__bars-content">
             <div
               ref={rulerRef}
               className="ruler"
@@ -399,93 +388,110 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
                 title={t(ct.rangeEndHandleTitle)}
               />
             </div>
-          </div>
 
-          {/* ---- コードトラック ---- */}
-          <div className="timeline__row timeline__row--chords" style={{ height: laneH }}>
-            <div className="timeline__gutter">
-              <span className="timeline__gutter-label">CHORD TRACK</span>
-              <span className="timeline__gutter-hint">
-                {editorTool === 'draw'
-                  ? t(ct.tapToAdd)
-                  : editorTool === 'erase'
-                    ? t(ct.tapToDelete)
-                    : ' '}
-              </span>
-            </div>
-            <div
-              className={`chord-lane tool-${editorTool}`}
-              style={{ width: laneWidth, height: laneH, ...gridStyle }}
-              onPointerDown={onLanePointerDown}
-              onPointerMove={onLanePointerMove}
-              onPointerUp={onLanePointerUp}
-              onPointerCancel={onLanePointerUp}
-              onLostPointerCapture={onLanePointerUp}
-            >
-              {/* 先頭・末尾の余白。非選択エリアよりさらに暗くする */}
-              <div className="timeline-margin-shade" style={{ left: 0, width: marginPx }} />
-              <div
-                className="timeline-margin-shade"
-                style={{ left: marginPx + contentWidth, width: marginPx }}
+            {/* ---- 再生ヘッド（BARS 行ぶん。旗マーカーはこちらだけに出す） ---- */}
+            <Playhead stepW={stepW} offset={marginPx} variant="timeline" />
+          </div>
+        </div>
+        <div className="timeline__bars-vzoom-spacer" aria-hidden="true" />
+      </div>
+
+      {/* ---- トラックエリア（BARS 行より下、独立してスクロールする） ---- */}
+      <div className="timeline__viewport">
+        <div
+          className="timeline__scroll"
+          ref={ref}
+          onScroll={handleScroll}
+          onWheel={onWheel}
+          style={{ height: chordTrackAreaHeight }}
+        >
+          <div className="timeline__inner" style={{ width: GUTTER_WIDTH + laneWidth }}>
+            {/* ---- トラックごとのコードレーン ---- */}
+            {tracks.map((track) => (
+              <TrackLane
+                key={track.id}
+                track={track}
+                isActive={track.id === activeTrackId}
+                canRemove={tracks.length > 1}
+                stepW={stepW}
+                marginPx={marginPx}
+                contentWidth={contentWidth}
+                laneWidth={laneWidth}
+                chordZoomY={chordZoomY}
+                gridStyle={gridStyle}
+                scrollRef={ref}
               />
+            ))}
 
-              <div className="chord-lane__content" style={{ left: marginPx }}>
-                {blocks.map((block) => (
-                  <ChordBlock
-                    key={block.id}
-                    block={block}
-                    stepW={stepW}
-                    zoomY={chordZoomY}
-                    laneH={laneH}
-                    selected={block.id === selectedBlockId || selectedBlockIds.includes(block.id)}
-                  />
-                ))}
-              </div>
-
-              {marquee && (
-                <div
-                  className="chord-lane__marquee"
-                  style={{ left: marquee.left, width: marquee.width }}
-                />
-              )}
-
+            {/* ---- トラック追加 ---- */}
+            <div className="timeline__row timeline__row--add-track">
+              <div className="timeline__gutter" />
               <button
                 type="button"
-                className="timeline-add-bar timeline-add-bar--start"
-                style={{ left: marginPx / 2 }}
-                onClick={handleAddBarStart}
-                title={t(te.addBarAtStartTitle)}
-                aria-label={t(te.addBarAtStartAria)}
+                className="timeline__add-track"
+                onClick={handleAddTrackClick}
+                title={t(tl.addTrackTitle)}
+                aria-label={t(tl.addTrackAria)}
               >
-                +
-              </button>
-              <button
-                type="button"
-                className="timeline-add-bar timeline-add-bar--end"
-                style={{ left: marginPx + contentWidth + marginPx / 2 }}
-                onClick={handleAddBarEnd}
-                title={t(te.addBarAtEndTitle)}
-                aria-label={t(te.addBarAtEndAria)}
-              >
-                +
+                {t(tl.addTrackLabel)}
               </button>
             </div>
-          </div>
 
-            {/* ---- 再生ヘッド（ルーラー＋レーンを貫通） ---- */}
-            <Playhead stepW={stepW} offset={GUTTER_WIDTH + marginPx} variant="timeline" />
+            {/*
+              ---- 小節追加（左右の＋）----
+              トラックごとに重複させず、トラックエリア全体で1組だけ表示する。
+              横位置はコンテンツ基準（スクロールに合わせて一緒に動く）、
+              縦位置は「実際にトラックがある部分」の現在の表示高さの中間
+              （syncAddBarTop で JS 側から同期。トラックエリアをトラックの
+              合計高さより広げていても、その空欄部分には落ち込まない。
+              表示倍率が変わってもアイコン自体の大きさは変えない —
+              CSS 側は固定サイズのまま）。
+            ---- */}
+            <button
+              ref={addBarStartRef}
+              type="button"
+              className="timeline-add-bar timeline-add-bar--start"
+              style={{ left: GUTTER_WIDTH + marginPx / 2, top: initialAddBarTop }}
+              onClick={handleAddBarStart}
+              title={t(te.addBarAtStartTitle)}
+              aria-label={t(te.addBarAtStartAria)}
+            >
+              +
+            </button>
+            <button
+              ref={addBarEndRef}
+              type="button"
+              className="timeline-add-bar timeline-add-bar--end"
+              style={{
+                left: GUTTER_WIDTH + marginPx + contentWidth + marginPx / 2,
+                top: initialAddBarTop,
+              }}
+              onClick={handleAddBarEnd}
+              title={t(te.addBarAtEndTitle)}
+              aria-label={t(te.addBarAtEndAria)}
+            >
+              +
+            </button>
+
+            {/* ---- 再生ヘッド（全レーンを貫通。旗マーカーは BARS 側にあるのでここでは出さない） ---- */}
+            <Playhead
+              stepW={stepW}
+              offset={GUTTER_WIDTH + marginPx}
+              variant="timeline"
+              showFlag={false}
+            />
           </div>
         </div>
 
         {/*
           ---- 縦ズーム（ピアノロールの .pr-vzoom と同じ考え方）。
           スクロール領域の外側の専用カラムに置くことで、水平スクロール幅の計算に
-          巻き込まれず常に右端に固定される。上の空白はルーラー行の高さぶん。
-          将来ここに縦スクロールバーが出ても、このカラムの位置は動かない。
+          巻き込まれず常に右端に固定される。高さはコードトラックエリアの表示高さ
+          （chordTrackAreaHeight）に揃える（chordZoomY はトラックを跨いで共有の
+          値なので、コントロールは1つでよい）。
         ---- */}
         <div className="timeline__vzoomcol">
-          <div className="timeline__vzoomcol-spacer" aria-hidden="true" />
-          <div className="timeline__vzoom" style={{ height: laneH }}>
+          <div className="timeline__vzoom" style={{ height: chordTrackAreaHeight }}>
             <ZoomSlider
               orientation="vertical"
               compact
@@ -510,6 +516,20 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
           ariaLabel={t(ct.zoomAria)}
         />
       </div>
+
+      {showAddTrackChooser && (
+        <AddTrackDialog
+          onChooseNormal={() => {
+            addTrack('notes');
+            setShowAddTrackChooser(false);
+          }}
+          onChooseChord={() => {
+            addTrack('chord');
+            setShowAddTrackChooser(false);
+          }}
+          onCancel={() => setShowAddTrackChooser(false)}
+        />
+      )}
     </section>
   );
 }

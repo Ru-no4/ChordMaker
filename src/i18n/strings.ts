@@ -23,8 +23,8 @@ export const strings = {
     bpmSliderAria: { ja: 'BPM スライダー', en: 'BPM slider' },
     timeSignatureLabel: { ja: '拍子', en: 'Time sig.' },
     barsLabel: { ja: '小節数', en: 'Bars' },
-    volumeLabel: { ja: 'Volume', en: 'Volume' },
-    volumeAria: { ja: '音量', en: 'Volume' },
+    volumeLabel: { ja: 'Master', en: 'Master' },
+    volumeAria: { ja: 'マスター音量', en: 'Master volume' },
     chordLabel: { ja: 'Chord', en: 'Chord' },
     chordTitle: {
       ja: 'コードを判定する時間の刻み（小節を何分割するか）',
@@ -72,14 +72,16 @@ export const strings = {
     candidates: { ja: '候補（クリックで確定）', en: 'Candidates (click to confirm)' },
     alternatives: { ja: '別解釈', en: 'Alternative readings' },
     preview: { ja: '♪ 試聴', en: '♪ Preview' },
+    notesTrackHint: {
+      ja: 'このトラックはコード判定を行いません。コードブロックをクリックすると構成音を表示します',
+      en: 'This track has no chord detection. Click a block to see its notes',
+    },
   },
 
   chordTimeline: {
     ariaLabel: { ja: 'コードタイムライン', en: 'Chord timeline' },
     rangeStartHandleTitle: { ja: 'ドラッグして再生範囲の開始位置を変更', en: 'Drag to change the playback range start' },
     rangeEndHandleTitle: { ja: 'ドラッグして再生範囲の終了位置を変更', en: 'Drag to change the playback range end' },
-    tapToAdd: { ja: 'タップで追加', en: 'Tap to add' },
-    tapToDelete: { ja: 'タップで削除', en: 'Tap to delete' },
     zoomAria: { ja: 'コードトラックの横幅表示倍率', en: 'Chord track horizontal zoom' },
     zoomVAria: { ja: 'コードトラックの縦方向表示倍率', en: 'Chord track vertical zoom' },
   },
@@ -98,6 +100,30 @@ export const strings = {
       en: 'Drag to resize the chord track',
     },
     aria: { ja: 'コードトラックの高さを調整', en: 'Resize the chord track' },
+  },
+
+  trackLane: {
+    selectTitle: { ja: 'クリックしてこのトラックを選択', en: 'Click to select this track' },
+    removeTitle: { ja: 'このトラックを削除', en: 'Remove this track' },
+    removeAria: { ja: 'トラックを削除', en: 'Remove track' },
+    addTrackLabel: { ja: '+ トラックを追加', en: '+ Add Track' },
+    addTrackTitle: { ja: 'トラックを追加', en: 'Add track' },
+    addTrackAria: { ja: 'トラックを追加', en: 'Add track' },
+    volumeAria: { ja: 'トラック音量', en: 'Track volume' },
+    muteTitle: { ja: 'ミュート', en: 'Mute' },
+    muteAria: { ja: 'トラックをミュート', en: 'Mute track' },
+    soloTitle: { ja: 'ソロ', en: 'Solo' },
+    soloAria: { ja: 'トラックをソロ', en: 'Solo track' },
+    renameTitle: { ja: 'クリックして名前を変更', en: 'Click to rename' },
+    colorTitle: { ja: 'トラックの色を変更', en: 'Change track color' },
+    colorAria: { ja: 'トラックの色', en: 'Track color' },
+    reorderTitle: { ja: 'ドラッグして並べ替え', en: 'Drag to reorder' },
+    reorderAria: { ja: 'トラックを並べ替え', en: 'Reorder track' },
+    resizeTitle: {
+      ja: 'ドラッグしてこのトラックの高さを変更（ダブルクリックで解除）',
+      en: 'Drag to resize this track (double-click to reset)',
+    },
+    resizeAria: { ja: 'トラックの高さを変更', en: 'Resize track height' },
   },
 
   chordBlock: {
@@ -154,11 +180,22 @@ export const strings = {
     saveThenOk: { ja: '保存してから実行 (.chrd)', en: 'Save, then proceed (.chrd)' },
   },
 
+  addTrackDialog: {
+    title: { ja: 'トラックの種類を選択', en: 'Choose a track type' },
+    message: {
+      ja: 'コードトラックが無くなっています。追加するトラックの種類を選んでください。',
+      en: 'There is no chord track. Choose which type of track to add.',
+    },
+    normalTrack: { ja: '通常トラック', en: 'Normal track' },
+    normalTrackHint: { ja: 'ノートをそのまま配置します', en: 'Places notes as-is' },
+    chordTrack: { ja: 'コードトラック', en: 'Chord track' },
+    chordTrackHint: { ja: 'コードを判定・表記します', en: 'Detects and labels chords' },
+    cancel: { ja: 'キャンセル', en: 'Cancel' },
+  },
+
   instrumentSelect: {
     label: { ja: '音源', en: 'Instrument' },
     loadingTitle: { ja: 'サンプルを読み込み中（今は合成音で鳴ります）', en: 'Loading samples (using the synth in the meantime)' },
-    loadingText: { ja: '読込中', en: 'Loading' },
-    loadFailedText: { ja: '読込失敗', en: 'Load failed' },
   },
 
   errors: {
