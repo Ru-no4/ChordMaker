@@ -10,6 +10,7 @@ import {
   ZOOM_Y_MIN,
   clamp,
   laneHeight,
+  minChordTrackAreaHeight,
   snapLength,
   snapStep,
   stepsPerBar,
@@ -748,13 +749,26 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   setEditorTool: (editorTool) => set({ editorTool }),
   setZoomX: (zoom) => set({ zoomX: clamp(zoom, ZOOM_X_MIN, ZOOM_X_MAX) }),
   setZoomY: (zoom) => set({ zoomY: clamp(zoom, ZOOM_Y_MIN, ZOOM_Y_MAX) }),
-  setChordZoomY: (zoom) => set({ chordZoomY: clamp(zoom, ZOOM_Y_MIN, ZOOM_Y_MAX) }),
+  setChordZoomY: (zoom) =>
+    set((s) => {
+      const chordZoomY = clamp(zoom, ZOOM_Y_MIN, ZOOM_Y_MAX);
+      return {
+        chordZoomY,
+        chordTrackAreaHeight: Math.max(s.chordTrackAreaHeight, minChordTrackAreaHeight(chordZoomY)),
+      };
+    }),
   zoomXBy: (factor) =>
     set((s) => ({ zoomX: clamp(s.zoomX * factor, ZOOM_X_MIN, ZOOM_X_MAX) })),
   zoomYBy: (factor) =>
     set((s) => ({ zoomY: clamp(s.zoomY * factor, ZOOM_Y_MIN, ZOOM_Y_MAX) })),
   chordZoomYBy: (factor) =>
-    set((s) => ({ chordZoomY: clamp(s.chordZoomY * factor, ZOOM_Y_MIN, ZOOM_Y_MAX) })),
+    set((s) => {
+      const chordZoomY = clamp(s.chordZoomY * factor, ZOOM_Y_MIN, ZOOM_Y_MAX);
+      return {
+        chordZoomY,
+        chordTrackAreaHeight: Math.max(s.chordTrackAreaHeight, minChordTrackAreaHeight(chordZoomY)),
+      };
+    }),
   resetZoom: () => set({ zoomX: 0.5, zoomY: 0.8, chordZoomY: DEFAULT_CHORD_ZOOM_Y }),
   toggleFollowPlayhead: () => set((s) => ({ followPlayhead: !s.followPlayhead })),
 

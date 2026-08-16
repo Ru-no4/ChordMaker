@@ -58,14 +58,41 @@ export const laneHeight = (zoomY: number): number => BASE_LANE_HEIGHT * zoomY;
 export const DEFAULT_CHORD_ZOOM_Y = 0.8;
 
 /**
- * コードトラック「エリア」（複数トラックのレーンを縦に並べて表示する領域）の
- * 表示高さ。境界のドラッグで手動調整できる。
+ * トラック追加行（ChordTimeline.css の `.timeline__row--add-track`）の高さ(px)。
+ * この行は常にトラックエリアのスクロール領域内、最後のレーンの下に表示される。
+ * 値は CSS 側と揃える。
+ */
+export const ADD_TRACK_ROW_HEIGHT = 26;
+
+/**
+ * .timeline__scroll は横にも（小節が多いと）スクロールしうる（overflow-x: auto）。
+ * 横スクロールバーが出ると、その分だけ縦の実効表示領域（clientHeight）が
+ * ブラウザ標準スクロールバーの太さぶん狭くなる。この余白を見込んでおかないと、
+ * 横スクロールバーの出現をきっかけに縦スクロールまで誘発してしまう
+ * （OS/ブラウザでスクロールバーの太さは異なるが、余裕を見て一律に確保する）。
+ */
+const SCROLLBAR_ALLOWANCE_PX = 16;
+
+/**
+ * コードトラック「エリア」（複数トラックのレーンを縦に並べて表示する領域）が
+ * 「レーン1本＋トラック追加行」を、スクロールなしで表示するのに必要な高さ(px)。
+ * トラックが2本以上に増えたときはこの高さを超えてよく、その場合はこのエリアの
+ * 中でスクロールする（.timeline__scroll の overflow-y: auto）。
+ */
+export const minChordTrackAreaHeight = (zoomY: number): number =>
+  laneHeight(zoomY) + ADD_TRACK_ROW_HEIGHT + SCROLLBAR_ALLOWANCE_PX;
+
+/**
+ * コードトラック「エリア」の表示高さ。境界のドラッグで手動調整できる。
  * 各レーン自体の高さはここでは決めない — 縦ズーム（chordZoomY）から
  * laneHeight() で一律に決まり、トラックが増えれば単にレーンが縦に
  * 積み重なって、このエリアの中でスクロールする。
- * エリアの下限は「既定の縦ズームでレーン1本ぶんを表示できる高さ」。
+ * エリアの下限は「既定の縦ズームでレーン1本ぶん＋トラック追加行を
+ * 表示できる高さ」。縦ズームを既定よりさらに大きくしたときは、
+ * setChordZoomY 側でこの下限を都度引き上げて追従させる（このエリア自体は
+ * ズームとは独立してユーザーが手動で広げた高さを保つが、縮めることはない）。
  */
-export const DEFAULT_CHORD_TRACK_AREA_HEIGHT = laneHeight(DEFAULT_CHORD_ZOOM_Y);
+export const DEFAULT_CHORD_TRACK_AREA_HEIGHT = minChordTrackAreaHeight(DEFAULT_CHORD_ZOOM_Y);
 export const CHORD_TRACK_AREA_HEIGHT_MIN = DEFAULT_CHORD_TRACK_AREA_HEIGHT;
 export const CHORD_TRACK_AREA_HEIGHT_MAX = 514;
 

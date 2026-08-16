@@ -16,6 +16,9 @@ npm run dev
 開発サーバは http://localhost:5173 で起動します。本番ビルドは `npm run build`、
 型チェックのみは `npx tsc -b`。
 
+テストは `npm test`（Vitest、`src/**/*.test.ts`）、lintは `npm run lint`（ESLint）。
+`master` への push / PR で GitHub Actions が lint・test・build を実行する。
+
 ## 技術構成
 
 - **Vite + React 18 + TypeScript**

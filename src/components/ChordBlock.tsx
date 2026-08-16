@@ -342,6 +342,14 @@ export function ChordBlock({
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onLostPointerCapture={onPointerUp}
+      onDoubleClick={(e) => {
+        // ピアノロールのノート削除と同じ近道（README にも明記済み）。
+        // 手ツールは触れない安全モード、消しゴムは既に単発タップで消えるので対象外。
+        if (editorTool === 'pan' || editorTool === 'erase') return;
+        e.preventDefault();
+        e.stopPropagation();
+        removeBlock(trackId, block.id);
+      }}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
