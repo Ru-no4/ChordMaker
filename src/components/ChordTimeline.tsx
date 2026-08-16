@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react';
-import { useProjectStore } from '../store/useProjectStore';
+import { MAX_TRACKS, useProjectStore } from '../store/useProjectStore';
 import { usePlayheadStore } from '../store/usePlayheadStore';
 import {
   STEPS_PER_WHOLE,
@@ -49,6 +49,7 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
   const tracks = useProjectStore((s) => s.tracks);
   const activeTrackId = useProjectStore((s) => s.activeTrackId);
   const addTrack = useProjectStore((s) => s.addTrack);
+  const isPlaying = useProjectStore((s) => s.isPlaying);
   const timeSignature = useProjectStore((s) => s.timeSignature);
   const bars = useProjectStore((s) => s.bars);
   const setBars = useProjectStore((s) => s.setBars);
@@ -430,7 +431,14 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
                 type="button"
                 className="timeline__add-track"
                 onClick={handleAddTrackClick}
-                title={t(tl.addTrackTitle)}
+                disabled={isPlaying || tracks.length >= MAX_TRACKS}
+                title={t(
+                  isPlaying
+                    ? tl.addTrackDisabledPlayingTitle
+                    : tracks.length >= MAX_TRACKS
+                      ? tl.addTrackDisabledMaxTitle
+                      : tl.addTrackTitle,
+                )}
                 aria-label={t(tl.addTrackAria)}
               >
                 {t(tl.addTrackLabel)}

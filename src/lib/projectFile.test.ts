@@ -11,7 +11,6 @@ const baseTrack: SerializedTrack = {
   volumeDb: -6,
   muted: false,
   solo: false,
-  laneHeightPx: null,
   blocks: [],
 };
 
@@ -110,29 +109,36 @@ describe('backward-compatible migration', () => {
     expect(parsed.tracks).toHaveLength(1);
     expect(parsed.tracks[0].kind).toBe('chord');
     expect(parsed.tracks[0].instrumentId).toBe('synth-basic');
-    expect(parsed.tracks[0].laneHeightPx).toBeNull();
     // rangeStart absent in v1 -> defaults to 0
     expect(parsed.rangeStart).toBe(0);
   });
 
-  it('fills in kind and laneHeightPx as chord/null when absent from a v2 track (pre-Phase7/6 file)', () => {
-    const { kind: _kind, laneHeightPx: _laneHeightPx, ...trackWithoutNewFields } = baseTrack;
+  it('fills in kind as chord when absent from a v2 track (pre-Phase7 file)', () => {
+    const { kind: _kind, ...trackWithoutKind } = baseTrack;
     const file = {
       ...serializeProject(baseSource),
-      tracks: [trackWithoutNewFields],
+      tracks: [trackWithoutKind],
     };
     const parsed = parseProjectFile(JSON.stringify(file));
     expect(parsed.tracks[0].kind).toBe('chord');
-    expect(parsed.tracks[0].laneHeightPx).toBeNull();
   });
 
-  it('preserves an explicit notes-kind track and a custom lane height', () => {
+  it('preserves an explicit notes-kind track', () => {
     const file = {
       ...serializeProject(baseSource),
-      tracks: [{ ...baseTrack, kind: 'notes', laneHeightPx: 96 }],
+      tracks: [{ ...baseTrack, kind: 'notes' }],
     };
     const parsed = parseProjectFile(JSON.stringify(file));
     expect(parsed.tracks[0].kind).toBe('notes');
-    expect(parsed.tracks[0].laneHeightPx).toBe(96);
+  });
+
+  it('ignores a leftover laneHeightPx field from files saved before the per-track height feature was removed', () => {
+    const file = {
+      ...serializeProject(baseSource),
+      tracks: [{ ...baseTrack, laneHeightPx: 96 }],
+    };
+    const parsed = parseProjectFile(JSON.stringify(file));
+    expect(parsed.tracks[0].kind).toBe('chord');
+    expect('laneHeightPx' in parsed.tracks[0]).toBe(false);
   });
 });

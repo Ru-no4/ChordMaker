@@ -9,7 +9,6 @@ import { useProjectStore, type Track } from '../store/useProjectStore';
 import { DEFAULT_CHORD_ZOOM_Y, laneHeight } from '../lib/grid';
 import { capturePointer, isTap, releasePointer } from '../lib/pointer';
 import { ChordBlock } from './ChordBlock';
-import { TrackLaneResizeHandle } from './TrackLaneResizeHandle';
 import { instrumentLabel } from '../lib/instruments';
 import { useT } from '../i18n/useT';
 import { strings } from '../i18n/strings';
@@ -65,10 +64,7 @@ export function TrackLane({
   gridStyle,
   scrollRef,
 }: TrackLaneProps) {
-  const laneHeightOverride = useProjectStore((s) => s.trackSettings[track.id]?.laneHeightPx ?? null);
-  // レーンの高さは既定では縦ズーム（chordZoomY）から一律に決まるが、
-  // トラックごとに TrackLaneResizeHandle でドラッグして上書きできる。
-  const laneH = laneHeightOverride ?? laneHeight(chordZoomY);
+  const laneH = laneHeight(chordZoomY);
   // 縦幅倍率を下げてレーンが低くなったときは、M/S/削除ボタンの間隔を
   // 詰めて収まりやすくする（既定の3pxで収まる高さがあればそのまま、
   // 収まらなければ最小1pxまで縮める。それでも収まらない分は
@@ -88,6 +84,7 @@ export function TrackLane({
   const addBlockAt = useProjectStore((s) => s.addBlockAt);
   const setActiveTrack = useProjectStore((s) => s.setActiveTrack);
   const removeTrack = useProjectStore((s) => s.removeTrack);
+  const isPlaying = useProjectStore((s) => s.isPlaying);
   const volumeDb = useProjectStore((s) => s.trackSettings[track.id]?.volumeDb ?? 0);
   const setTrackVolumeDb = useProjectStore((s) => s.setTrackVolumeDb);
   const instrumentId = useProjectStore((s) => s.trackSettings[track.id]?.instrumentId ?? '');
@@ -98,8 +95,6 @@ export function TrackLane({
   const renameTrack = useProjectStore((s) => s.renameTrack);
   const setTrackColor = useProjectStore((s) => s.setTrackColor);
   const moveTrackBy = useProjectStore((s) => s.moveTrackBy);
-  const setTrackLaneHeight = useProjectStore((s) => s.setTrackLaneHeight);
-  const resetTrackLaneHeight = useProjectStore((s) => s.resetTrackLaneHeight);
   const { t, locale } = useT();
   const tl = strings.trackLane;
 
@@ -338,7 +333,8 @@ export function TrackLane({
                 e.stopPropagation();
                 removeTrack(track.id);
               }}
-              title={t(tl.removeTitle)}
+              disabled={isPlaying}
+              title={t(isPlaying ? tl.removeDisabledPlayingTitle : tl.removeTitle)}
               aria-label={t(tl.removeAria)}
             >
               ×
@@ -384,12 +380,6 @@ export function TrackLane({
             style={{ left: marquee.left, width: marquee.width }}
           />
         )}
-
-        <TrackLaneResizeHandle
-          height={laneH}
-          onResize={(px) => setTrackLaneHeight(track.id, px)}
-          onReset={() => resetTrackLaneHeight(track.id)}
-        />
       </div>
     </div>
   );

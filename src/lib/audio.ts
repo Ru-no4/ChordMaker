@@ -49,6 +49,19 @@ export interface TrackNotes {
   notes: ScheduledNote[];
 }
 
+/**
+ * setTracks の呼び出し元（useTransport）は、実際に変更の無いトラックについても
+ * 毎回 notes 配列を作り直さず、同じ参照を渡すよう気を付けている
+ * （ドラッグ中の pointermove のたびに全トラックの Tone.Part を作り直すと
+ * 重くなるため）。ここではその参照の一致だけを見て「本当に変わったトラック」
+ * を判定する — 中身の深い比較はしない（呼び出し元の責務）。
+ */
+function loopRangeEquals(a: LoopRange | null, b: LoopRange | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.startStep === b.startStep && a.endStep === b.endStep;
+}
+
 /** Tone.Part に渡すイベント。`time` は Transport tick 表記。 */
 interface PartEvent {
   time: string;
@@ -607,12 +620,20 @@ class AudioEngine {
    * `tracks` に含まれなくなったトラック（削除された）のチャンネルはここで破棄する。
    */
   setTracks(tracks: TrackNotes[], loopRange: LoopRange | null = null): void {
+    // ループ範囲が変わったときは、範囲による切り詰め方が全チャンネルに
+    // 影響するので、ノートに変更が無いチャンネルも含めて全部作り直す必要がある。
+    const loopRangeChanged = !loopRangeEquals(this.pendingLoopRange, loopRange);
     this.pendingLoopRange = loopRange;
 
     const seen = new Set<string>();
     for (const t of tracks) {
       seen.add(t.trackId);
       const channel = this.getOrCreateChannel(t.trackId);
+      // notes が前回と同じ参照（＝そのトラックの中身は変わっていない）で、
+      // ループ範囲も変わっていなければ、この Part を作り直す必要は無い。
+      // ノートをドラッグしている間、動かしていない他トラックの Tone.Part まで
+      // 毎フレーム stop/dispose/再構築してしまう（重い）のを避けるための判定。
+      if (channel.pendingNotes === t.notes && !loopRangeChanged) continue;
       channel.pendingNotes = t.notes;
       this.scheduleChannelPart(channel, loopRange);
     }

@@ -17,6 +17,7 @@ export function InstrumentSelect({ trackId }: InstrumentSelectProps) {
   const setTrackInstrument = useProjectStore((s) => s.setTrackInstrument);
   const loading = useProjectStore((s) => s.trackInstrumentLoading[trackId] ?? false);
   const error = useProjectStore((s) => s.trackInstrumentError[trackId] ?? false);
+  const isPlaying = useProjectStore((s) => s.isPlaying);
   const { t } = useT();
   const is = strings.instrumentSelect;
 
@@ -31,6 +32,8 @@ export function InstrumentSelect({ trackId }: InstrumentSelectProps) {
           className="cb-select instrument-select__input"
           value={instrumentId}
           onChange={(e) => setTrackInstrument(trackId, e.target.value)}
+          disabled={isPlaying}
+          title={isPlaying ? t(is.disabledPlayingTitle) : undefined}
         >
           {INSTRUMENT_GROUPS.map((group) => (
             <optgroup key={group.label.ja} label={t(group.label)}>

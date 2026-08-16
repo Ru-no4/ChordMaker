@@ -1,15 +1,14 @@
 import { create } from 'zustand';
 import {
+  CHORD_DIVISIONS,
   CHORD_TRACK_AREA_HEIGHT_MAX,
-  CHORD_TRACK_AREA_HEIGHT_MIN,
-  DEFAULT_CHORD_TRACK_AREA_HEIGHT,
   DEFAULT_CHORD_ZOOM_Y,
+  QUANTIZE_OPTIONS,
   ZOOM_X_MAX,
   ZOOM_X_MIN,
   ZOOM_Y_MAX,
   ZOOM_Y_MIN,
   clamp,
-  laneHeight,
   minChordTrackAreaHeight,
   snapLength,
   snapStep,
@@ -20,6 +19,7 @@ import {
 } from '../lib/grid';
 import { DEFAULT_INSTRUMENT_ID } from '../lib/instruments';
 import { loadAutosave, saveAutosave } from '../lib/autosave';
+import { nativeScrollbarThickness } from '../lib/scrollbar';
 import type { ProjectFile, SerializedTrack } from '../lib/projectFile';
 
 /* ------------------------------------------------------------------ */
@@ -69,12 +69,6 @@ export interface TrackSettings {
   volumeDb: number;
   muted: boolean;
   solo: boolean;
-  /**
-   * トラック単位のレーン高さ(px)の上書き。null なら共有の縦ズーム（chordZoomY）
-   * から一律に決まる高さをそのまま使う。ChordTrackResizeHandle（トラック
-   * エリア全体の高さ調整）と同じ考え方をトラック単位に一般化したもの。
-   */
-  laneHeightPx: number | null;
 }
 
 /** 編集ツール。すべての操作がツールだけで到達できるようにする。 */
@@ -134,8 +128,21 @@ const DEFAULT_VOLUME_DB = -30;
 const DEFAULT_TRACK_VOLUME_DB = 0;
 const DEFAULT_TRACK_NAME = 'CHORD TRACK';
 const DEFAULT_TRACK_COLOR = '#4f8cff';
+/**
+ * トラック本数の上限。トラックが増えるほど、音源（特にサンプル音源）が
+ * トラックごとに独立してメモリを消費するため、際限なく増やせないようにする。
+ */
+export const MAX_TRACKS = 8;
 /** 「小節数」入力の安全な上限（意味のある業務的な上限ではなく、暴走防止のための値） */
 const BARS_MAX = 512;
+const BPM_MIN = 20;
+const BPM_MAX = 300;
+/**
+ * 拍子（分子・分母）の安全な範囲。UI からは常に決まった候補（4/4 等）しか
+ * 選べないが、.chrd ファイルは他人が作ったものを読み込む前提のフォーマットなので、
+ * ファイル起因の値をここより外に出さない（暴走防止。business的な意味は無い）。
+ */
+const TIME_SIG_PART_MAX = 64;
 
 function makeBlock(start: number, length: number, midis: number[]): ChordBlockItem {
   return {
@@ -198,7 +205,6 @@ function makeDefaultTrackSettings(): TrackSettings {
     volumeDb: DEFAULT_TRACK_VOLUME_DB,
     muted: false,
     solo: false,
-    laneHeightPx: null,
   };
 }
 
@@ -246,7 +252,6 @@ export function isDefaultProjectState(s: {
     settings.volumeDb === DEFAULT_TRACK_VOLUME_DB &&
     !settings.muted &&
     !settings.solo &&
-    settings.laneHeightPx === null &&
     isSeedBlocks(track.blocks)
   );
 }
@@ -415,9 +420,6 @@ interface ProjectState {
   setTrackColor: (trackId: string, color: string) => void;
   /** trackId を現在位置から delta ぶんだけ前後に動かす（範囲外は端で止まる） */
   moveTrackBy: (trackId: string, delta: number) => void;
-  /** トラック単位のレーン高さ上書き(px)。共有ズームに戻すには resetTrackLaneHeight を使う */
-  setTrackLaneHeight: (trackId: string, px: number) => void;
-  resetTrackLaneHeight: (trackId: string) => void;
 
   /** ドラッグの開始・終了で呼び、その間の変更を1つの履歴にまとめる */
   beginTransaction: () => void;
@@ -623,7 +625,6 @@ function splitSerializedTracks(
       volumeDb: t.volumeDb,
       muted: t.muted,
       solo: t.solo,
-      laneHeightPx: t.laneHeightPx ?? null,
     };
   }
   return { tracks, trackSettings };
@@ -636,6 +637,13 @@ const autosavedSplit = autosaved ? splitSerializedTracks(autosaved.tracks) : nul
 const initialTracks = autosavedSplit?.tracks ?? [makeDefaultTrack()];
 const initialTrackSettings =
   autosavedSplit?.trackSettings ?? { [initialTracks[0].id]: makeDefaultTrackSettings() };
+
+// コードトラックエリアの下限計算に使うスクロールバーの太さ。OS/ブラウザで
+// 異なる（Windows classic は十数px、macOS/モバイルのオーバーレイは 0px）ため
+// 決め打ちにせず実測する（lib/scrollbar.ts 参照）。
+const scrollbarAllowance = nativeScrollbarThickness();
+const minChordTrackAreaHeightFor = (zoomY: number): number =>
+  minChordTrackAreaHeight(zoomY, scrollbarAllowance);
 
 export const useProjectStore = create<ProjectState>((set, get) => {
   /** 単発の操作を1つの履歴としてまとめる */
@@ -674,7 +682,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   zoomX: 0.5,
   zoomY: 0.8, // ZOOM_FACTOR 1段階分ズームアウトした状態を初期表示にする
   chordZoomY: DEFAULT_CHORD_ZOOM_Y,
-  chordTrackAreaHeight: DEFAULT_CHORD_TRACK_AREA_HEIGHT,
+  chordTrackAreaHeight: minChordTrackAreaHeightFor(DEFAULT_CHORD_ZOOM_Y),
   followPlayhead: true,
 
   past: [],
@@ -697,7 +705,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   clipboard: null,
 
   /* --- 設定 --- */
-  setBpm: (bpm) => set({ bpm: clamp(Math.round(bpm), 20, 300) }),
+  setBpm: (bpm) => set({ bpm: clamp(Math.round(bpm), BPM_MIN, BPM_MAX) }),
 
   // 拍子・小節数は「再生できる範囲（ループ・自動停止の基準）」を決めるだけで、
   // 既存のブロック・ノートを切り詰めたりはしない。範囲より後ろにはみ出した内容は
@@ -754,7 +762,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       const chordZoomY = clamp(zoom, ZOOM_Y_MIN, ZOOM_Y_MAX);
       return {
         chordZoomY,
-        chordTrackAreaHeight: Math.max(s.chordTrackAreaHeight, minChordTrackAreaHeight(chordZoomY)),
+        chordTrackAreaHeight: Math.max(s.chordTrackAreaHeight, minChordTrackAreaHeightFor(chordZoomY)),
       };
     }),
   zoomXBy: (factor) =>
@@ -766,7 +774,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       const chordZoomY = clamp(s.chordZoomY * factor, ZOOM_Y_MIN, ZOOM_Y_MAX);
       return {
         chordZoomY,
-        chordTrackAreaHeight: Math.max(s.chordTrackAreaHeight, minChordTrackAreaHeight(chordZoomY)),
+        chordTrackAreaHeight: Math.max(s.chordTrackAreaHeight, minChordTrackAreaHeightFor(chordZoomY)),
       };
     }),
   resetZoom: () => set({ zoomX: 0.5, zoomY: 0.8, chordZoomY: DEFAULT_CHORD_ZOOM_Y }),
@@ -774,6 +782,12 @@ export const useProjectStore = create<ProjectState>((set, get) => {
 
   /* --- トラック --- */
   addTrack: (kind) => {
+    const s0 = get();
+    // 再生中は追加不可（UI側もボタンを無効化するが、こちらは念のための防御）。
+    // 上限に達していれば何もしない（呼び出し側は戻り値を使っていないので、
+    // 何を返しても実害は無いが、意味の通る値として activeTrackId を返す）。
+    if (s0.isPlaying || s0.tracks.length >= MAX_TRACKS) return s0.activeTrackId;
+
     let name: string;
     if (kind === 'chord') {
       // コードトラックの追加は「トラック一覧にコードトラックが1本も無い」
@@ -809,6 +823,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   removeTrack: (trackId) =>
     transact(() =>
       set((s) => {
+        if (s.isPlaying) return {}; // 再生中は削除不可（UI側もボタンを無効化）
         if (s.tracks.length <= 1) return {}; // 最後の1本は消せない
         const remaining = s.tracks.filter((t) => t.id !== trackId);
         const { [trackId]: _removed, ...restSettings } = s.trackSettings;
@@ -844,6 +859,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
 
   setTrackInstrument: (trackId, instrumentId) =>
     set((s) => {
+      if (s.isPlaying) return {}; // 再生中は音源変更不可（UI側もセレクトを無効化）
       const settings = s.trackSettings[trackId];
       if (!settings) return {};
       return {
@@ -870,7 +886,13 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     }),
 
   setChordTrackAreaHeight: (px) =>
-    set({ chordTrackAreaHeight: clamp(px, CHORD_TRACK_AREA_HEIGHT_MIN, CHORD_TRACK_AREA_HEIGHT_MAX) }),
+    set((s) => ({
+      chordTrackAreaHeight: clamp(
+        px,
+        minChordTrackAreaHeightFor(s.chordZoomY),
+        CHORD_TRACK_AREA_HEIGHT_MAX,
+      ),
+    })),
 
   toggleTrackMute: (trackId) =>
     set((s) => {
@@ -909,25 +931,6 @@ export const useProjectStore = create<ProjectState>((set, get) => {
         return { tracks: next };
       }),
     ),
-
-  setTrackLaneHeight: (trackId, px) =>
-    set((s) => {
-      const settings = s.trackSettings[trackId];
-      if (!settings) return {};
-      const clamped = clamp(px, laneHeight(ZOOM_Y_MIN), laneHeight(ZOOM_Y_MAX));
-      return {
-        trackSettings: { ...s.trackSettings, [trackId]: { ...settings, laneHeightPx: clamped } },
-      };
-    }),
-
-  resetTrackLaneHeight: (trackId) =>
-    set((s) => {
-      const settings = s.trackSettings[trackId];
-      if (!settings) return {};
-      return {
-        trackSettings: { ...s.trackSettings, [trackId]: { ...settings, laneHeightPx: null } },
-      };
-    }),
 
   /* --- 再生 --- */
   setPlaying: (isPlaying) => set({ isPlaying }),
@@ -1627,20 +1630,35 @@ export const useProjectStore = create<ProjectState>((set, get) => {
    * ファイルから読み込んだ内容を丸ごと反映する。
    * トラックの中身（ブロック） / 小節数 / 拍子は Undo 対象（誤って読み込んでも Ctrl+Z で戻せる）。
    * トラックの設定（音源・音量など）や他の設定は、他のセッターと同様に Undo 対象外。
+   *
+   * .chrd は他人が作ったファイルを読み込む前提のフォーマット。
+   * parseProjectFile は「形（型）」の検証はするが値の範囲までは見ていないため、
+   * ここで通常の UI 操作と同じ範囲に丸める（例えば bars に巨大な値を仕込んだ
+   * ファイルを開かせて、タイムラインに大量のグリッドを描画させフリーズさせる
+   * ような壊れ方/悪用を防ぐ）。
    */
   loadProject: (file) =>
     transact(() => {
       const { tracks, trackSettings } = splitSerializedTracks(file.tracks);
+      const timeSignature: TimeSignature = {
+        numerator: clamp(Math.round(file.timeSignature.numerator), 1, TIME_SIG_PART_MAX),
+        denominator: clamp(Math.round(file.timeSignature.denominator), 1, TIME_SIG_PART_MAX),
+      };
+      const minBars = 1 / stepsPerBar(timeSignature);
       set({
         tracks,
         trackSettings,
         activeTrackId: tracks[0]?.id ?? get().activeTrackId,
-        bars: file.bars,
-        rangeStart: file.rangeStart ?? 0,
-        timeSignature: file.timeSignature,
-        bpm: file.bpm,
-        chordResolution: file.chordResolution,
-        quantize: file.quantize,
+        bars: clamp(file.bars, minBars, BARS_MAX),
+        rangeStart: clamp(file.rangeStart ?? 0, 0, BARS_MAX),
+        timeSignature,
+        bpm: clamp(Math.round(file.bpm), BPM_MIN, BPM_MAX),
+        chordResolution: (CHORD_DIVISIONS as readonly number[]).includes(file.chordResolution)
+          ? (file.chordResolution as ChordResolution)
+          : DEFAULT_CHORD_RESOLUTION,
+        quantize: (QUANTIZE_OPTIONS as readonly number[]).includes(file.quantize)
+          ? (file.quantize as QuantizeValue)
+          : DEFAULT_QUANTIZE,
         snap: file.snap,
         selectedBlockId: null,
         selectedBlockIds: [],

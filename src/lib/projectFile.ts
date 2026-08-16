@@ -26,9 +26,6 @@ export interface SerializedTrack {
   volumeDb: number;
   muted: boolean;
   solo: boolean;
-  /** トラック単位のレーン高さ上書き(px)。無ければ null（共有ズームを使う）。
-   *  この項目導入前のファイルには存在しない。読み込み時に null で補う。 */
-  laneHeightPx: number | null;
   blocks: ChordBlockItem[];
 }
 
@@ -121,7 +118,7 @@ function isBlock(v: unknown): v is ChordBlockItem {
 
 function isSerializedTrack(
   v: unknown,
-): v is Omit<SerializedTrack, 'kind' | 'laneHeightPx'> & { kind?: unknown; laneHeightPx?: unknown } {
+): v is Omit<SerializedTrack, 'kind'> & { kind?: unknown } {
   if (!v || typeof v !== 'object') return false;
   const t = v as Record<string, unknown>;
   return (
@@ -136,10 +133,9 @@ function isSerializedTrack(
     typeof t.volumeDb === 'number' &&
     typeof t.muted === 'boolean' &&
     typeof t.solo === 'boolean' &&
-    // laneHeightPx も同様に、導入前のファイルには存在しないため必須にしない
-    (t.laneHeightPx === undefined || t.laneHeightPx === null || typeof t.laneHeightPx === 'number') &&
     Array.isArray(t.blocks) &&
     t.blocks.every(isBlock)
+    // laneHeightPx は廃止済み。旧ファイルに残っていても余分なキーとして無視する。
   );
 }
 
@@ -185,11 +181,15 @@ export function parseProjectFile(text: string): ProjectFile {
     // 値は 'chord' に正規化する（以前はすべてのトラックがコード判定・
     // コード編集の対象として扱われていたので、それを再現するのが唯一
     // 「以前と見分けがつかない」デフォルトになる）。
-    tracks = f.tracks.map((t) => ({
-      ...t,
-      kind: t.kind === 'chord' || t.kind === 'notes' ? t.kind : 'chord',
-      laneHeightPx: typeof t.laneHeightPx === 'number' ? t.laneHeightPx : null,
-    }));
+    tracks = f.tracks.map((t) => {
+      // laneHeightPx はトラック別高さ調整機能の廃止に伴い廃止済み。
+      // 旧ファイルに残っていたら読み込み時に捨てる（再保存で消える）。
+      const { laneHeightPx: _laneHeightPx, ...rest } = t as typeof t & { laneHeightPx?: unknown };
+      return {
+        ...rest,
+        kind: t.kind === 'chord' || t.kind === 'notes' ? t.kind : 'chord',
+      };
+    });
   } else {
     if (!Array.isArray(f.blocks) || !f.blocks.every(isBlock)) {
       throw new ProjectFileError('corrupt-blocks');
@@ -207,7 +207,6 @@ export function parseProjectFile(text: string): ProjectFile {
         volumeDb: f.volumeDb,
         muted: false,
         solo: false,
-        laneHeightPx: null,
         blocks: f.blocks as ChordBlockItem[],
       },
     ];

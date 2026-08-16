@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { audioEngine } from '../lib/audio';
+import { audioEngine, type ScheduledNote } from '../lib/audio';
 import { contentExtentSteps, stepsPerBar, totalSteps } from '../lib/grid';
-import { flattenNotes, useProjectStore } from '../store/useProjectStore';
+import { flattenNotes, useProjectStore, type ChordBlockItem } from '../store/useProjectStore';
 import { usePlayheadStore } from '../store/usePlayheadStore';
 
 /** ストアの状態を Tone.js トランスポートへ反映し、再生操作を提供する */
@@ -25,6 +25,30 @@ export function useTransport() {
   // トラックの「顔ぶれ」（id の集合と並び）だけを安定した文字列キーにしておく。
   const trackIdsKey = tracks.map((t) => t.id).join(',');
   const trackIds = useMemo(() => trackIdsKey.split(',').filter(Boolean), [trackIdsKey]);
+
+  /**
+   * ノート/ブロックのドラッグ中は pointermove のたびに tracks 配列全体が
+   * 新しい参照になるが、実際に中身が変わったのは操作中の1トラックだけ
+   * （他トラックは store 側で同じ blocks 参照のまま保たれる）。
+   * ここでトラックごとに「blocks 参照が変わっていなければ前回計算した
+   * notes 配列をそのまま使い回す」キャッシュを持つ。こうして生成した
+   * notes 配列を audioEngine.setTracks に渡すと、中身が変わっていない
+   * トラックの Tone.Part まで毎フレーム作り直す（重い）のを避けられる
+   * （audioEngine.setTracks 側は notes の参照が前回と同じかどうかだけを見る）。
+   */
+  const notesCacheRef = useRef(new Map<string, { blocks: ChordBlockItem[]; notes: ScheduledNote[] }>());
+  const trackNotesInput = useMemo(() => {
+    const cache = notesCacheRef.current;
+    const nextCache = new Map<string, { blocks: ChordBlockItem[]; notes: ScheduledNote[] }>();
+    const input = tracks.map((t) => {
+      const cached = cache.get(t.id);
+      const notes = cached && cached.blocks === t.blocks ? cached.notes : flattenNotes(t.blocks);
+      nextCache.set(t.id, { blocks: t.blocks, notes });
+      return { trackId: t.id, notes };
+    });
+    notesCacheRef.current = nextCache;
+    return input;
+  }, [tracks]);
 
   const total = totalSteps(timeSignature, bars);
   // 開始位置が終了位置以降になっている（入れ替わっている）間は無効扱いにし、
@@ -60,12 +84,13 @@ export function useTransport() {
     // 音が頭から聞こえない、範囲の終端をまたぐ音がループしても鳴り続ける、
     // という2つの問題を避けるため。ループ無効時は従来通り本来の長さで鳴らす。
     // 全トラックぶんをまとめて渡す（存在しなくなったトラックのチャンネルは
-    // audioEngine 側で自動的に破棄される）。
+    // audioEngine 側で自動的に破棄される。中身が変わっていないトラックの
+    // Tone.Part を作り直さない最適化は audioEngine.setTracks 側で行う）。
     audioEngine.setTracks(
-      tracks.map((t) => ({ trackId: t.id, notes: flattenNotes(t.blocks) })),
+      trackNotesInput,
       loop ? { startStep: loopStart, endStep: loopEnd } : null,
     );
-  }, [tracks, loop, loopStart, loopEnd]);
+  }, [trackNotesInput, loop, loopStart, loopEnd]);
 
   useEffect(() => {
     audioEngine.setVolumeDb(volumeDb);

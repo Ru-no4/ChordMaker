@@ -68,10 +68,12 @@ export const ADD_TRACK_ROW_HEIGHT = 26;
  * .timeline__scroll は横にも（小節が多いと）スクロールしうる（overflow-x: auto）。
  * 横スクロールバーが出ると、その分だけ縦の実効表示領域（clientHeight）が
  * ブラウザ標準スクロールバーの太さぶん狭くなる。この余白を見込んでおかないと、
- * 横スクロールバーの出現をきっかけに縦スクロールまで誘発してしまう
- * （OS/ブラウザでスクロールバーの太さは異なるが、余裕を見て一律に確保する）。
+ * 横スクロールバーの出現をきっかけに縦スクロールまで誘発してしまう。
+ * 太さは OS/ブラウザで異なる（lib/scrollbar.ts の nativeScrollbarThickness で
+ * 実測する）ため、呼び出し側から渡してもらう。実測できない・していない
+ * ときのフォールバックとして、決め打ちの安全値を既定にしておく。
  */
-const SCROLLBAR_ALLOWANCE_PX = 16;
+const SCROLLBAR_ALLOWANCE_FALLBACK_PX = 16;
 
 /**
  * コードトラック「エリア」（複数トラックのレーンを縦に並べて表示する領域）が
@@ -79,8 +81,10 @@ const SCROLLBAR_ALLOWANCE_PX = 16;
  * トラックが2本以上に増えたときはこの高さを超えてよく、その場合はこのエリアの
  * 中でスクロールする（.timeline__scroll の overflow-y: auto）。
  */
-export const minChordTrackAreaHeight = (zoomY: number): number =>
-  laneHeight(zoomY) + ADD_TRACK_ROW_HEIGHT + SCROLLBAR_ALLOWANCE_PX;
+export const minChordTrackAreaHeight = (
+  zoomY: number,
+  scrollbarAllowancePx: number = SCROLLBAR_ALLOWANCE_FALLBACK_PX,
+): number => laneHeight(zoomY) + ADD_TRACK_ROW_HEIGHT + scrollbarAllowancePx;
 
 /**
  * コードトラック「エリア」の表示高さ。境界のドラッグで手動調整できる。

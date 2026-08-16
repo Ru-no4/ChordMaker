@@ -109,6 +109,18 @@ export const strings = {
     addTrackLabel: { ja: '+ トラックを追加', en: '+ Add Track' },
     addTrackTitle: { ja: 'トラックを追加', en: 'Add track' },
     addTrackAria: { ja: 'トラックを追加', en: 'Add track' },
+    addTrackDisabledPlayingTitle: {
+      ja: '再生中はトラックを追加できません',
+      en: 'Cannot add a track while playing',
+    },
+    addTrackDisabledMaxTitle: {
+      ja: 'トラックは最大8本までです',
+      en: 'You can have at most 8 tracks',
+    },
+    removeDisabledPlayingTitle: {
+      ja: '再生中はトラックを削除できません',
+      en: 'Cannot remove a track while playing',
+    },
     volumeAria: { ja: 'トラック音量', en: 'Track volume' },
     muteTitle: { ja: 'ミュート', en: 'Mute' },
     muteAria: { ja: 'トラックをミュート', en: 'Mute track' },
@@ -119,11 +131,6 @@ export const strings = {
     colorAria: { ja: 'トラックの色', en: 'Track color' },
     reorderTitle: { ja: 'ドラッグして並べ替え', en: 'Drag to reorder' },
     reorderAria: { ja: 'トラックを並べ替え', en: 'Reorder track' },
-    resizeTitle: {
-      ja: 'ドラッグしてこのトラックの高さを変更（ダブルクリックで解除）',
-      en: 'Drag to resize this track (double-click to reset)',
-    },
-    resizeAria: { ja: 'トラックの高さを変更', en: 'Resize track height' },
   },
 
   chordBlock: {
@@ -196,6 +203,7 @@ export const strings = {
   instrumentSelect: {
     label: { ja: '音源', en: 'Instrument' },
     loadingTitle: { ja: 'サンプルを読み込み中（今は合成音で鳴ります）', en: 'Loading samples (using the synth in the meantime)' },
+    disabledPlayingTitle: { ja: '再生中は音源を変更できません', en: 'Cannot change instrument while playing' },
   },
 
   errors: {

@@ -9,6 +9,11 @@
   max-width: 220px;
 }
 
+.instrument-select__input:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .instrument-select__status {
   display: inline-flex;
   align-items: center;
