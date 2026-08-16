@@ -473,12 +473,18 @@ export function ChordTimeline({ onSeek }: ChordTimelineProps) {
               +
             </button>
 
-            {/* ---- 再生ヘッド（全レーンを貫通。旗マーカーは BARS 側にあるのでここでは出さない） ---- */}
+            {/*
+              ---- 再生ヘッド（全レーンを貫通。旗マーカーは BARS 側にあるのでここでは出さない） ----
+              親（.timeline__inner）は「トラック追加」行まで含んでしまうため、
+              height を明示してトラック本体（レーン合計高さ）で止める
+              （syncAddBarTop の tracksHeight と同じ計算式）。
+            ---- */}
             <Playhead
               stepW={stepW}
               offset={GUTTER_WIDTH + marginPx}
               variant="timeline"
               showFlag={false}
+              height={tracks.length * laneHeight(chordZoomY)}
             />
           </div>
         </div>

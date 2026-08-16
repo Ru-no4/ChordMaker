@@ -503,9 +503,17 @@
   /* 縦ズームでブロックがレーンの高さを超えたときにスクロールで見えるようにする */
   overflow-y: auto;
   /*
-   * レーンの空白部分ではブラウザの横スクロールを残す。
-   * ブロックのドラッグは .chord-block 側の touch-action: none で拾うので、
-   * 「指1本でスクロールできない」問題を起こさずに済む。
+   * 横方向は .timeline__scroll 側で1つだけ持てば十分（レーンごとに
+   * 独立した横スクロールバーは不要）。overflow-y だけを auto にすると
+   * ブラウザは overflow-x の計算値も自動的に auto 扱いにしてしまう
+   * （CSS Overflow の仕様上の挙動）ため、明示的に hidden にして
+   * トラックごとの余計な横スクロールバーの発生を防ぐ。
+   */
+  overflow-x: hidden;
+  /*
+   * レーンの空白部分ではブラウザの横スクロールを残す（親の .timeline__scroll
+   * が拾う）。ブロックのドラッグは .chord-block 側の touch-action: none で
+   * 拾うので、「指1本でスクロールできない」問題を起こさずに済む。
    */
   touch-action: pan-x pan-y;
 }
